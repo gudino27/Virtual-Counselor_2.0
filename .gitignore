@@ -1,0 +1,53 @@
+# Dependencies
+/frontend/node_modules/
+node_modules/
+
+# Environment variables
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+.next/
+# Logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime data
+pids
+*.pid
+*.seed
+*.pid.lock
+
+# Coverage directory used by tools like istanbul
+coverage/
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# IDE files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+frontend/.next/static/webpack/0f058c2d6e8e0b1f.webpack.hot-update.json
+frontend/.next/server/app-paths-manifest.json
+frontend\.next\**
+frontend/.next/
+demo-section-data.md
+n8n\*
+n8n
+setup-wsu-scraper-dev.bat
+setup-wsu-scraper-dev.sh
+setup-wsu-scraper.sh
+.env.development
+start-dev.bat
+
