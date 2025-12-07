@@ -1,0 +1,75 @@
+version: '3.8'
+
+services:
+  # Frontend - React App
+  frontend:
+    build:
+      context: ./virtual-counselor
+      dockerfile: Dockerfile
+    container_name: virtual-counselor-frontend
+    ports:
+      - "3007:80"
+    environment:
+      - NODE_ENV=production
+      - REACT_APP_API_URL=http://localhost:3008
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - vc-network
+
+  # Backend API - Node.js + SQLite
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile.api
+    container_name: virtual-counselor-api
+    ports:
+      - "3008:3008"
+    environment:
+      - NODE_ENV=production
+      - API_PORT=3008
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    volumes:
+      - ./data:/app/data
+      - ./pdf-archieved-catalog:/app/pdf-archieved-catalog:ro
+    restart: unless-stopped
+    networks:
+      - vc-network
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:3008/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+  # n8n - Workflow Automation
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: virtual-counselor-n8n
+    ports:
+      - "3009:5678"
+    environment:
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://api:3008
+      - GENERIC_TIMEZONE=America/Los_Angeles
+      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+    volumes:
+      - n8n_data:/home/node/.n8n
+    restart: unless-stopped
+    depends_on:
+      - api
+    networks:
+      - vc-network
+
+networks:
+  vc-network:
+    driver: bridge
+
+volumes:
+  n8n_data:

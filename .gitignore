@@ -51,3 +51,8 @@ setup-wsu-scraper.sh
 .env.development
 start-dev.bat
 
+virtual-counselor/playwright-report/*
+virtual-counselor/test-results/*
+.env.*
+*.md
+data/*
