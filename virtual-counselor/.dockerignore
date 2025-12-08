@@ -1,0 +1,38 @@
+# Dependencies
+node_modules
+
+# Git
+.git
+.gitignore
+
+# Environment files
+.env
+.env.*
+!.env.example
+
+# IDE
+.vscode
+.idea
+
+# Test files
+coverage
+playwright-report
+test-results
+e2e
+
+# Build output (will be created during build)
+build
+dist
+
+# Source maps
+*.map
+
+# Development configs
+*.config.js
+!vite.config.js
+!tailwind.config.js
+!postcss.config.js
+
+# Misc
+.DS_Store
+*.log

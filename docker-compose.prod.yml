@@ -26,10 +26,12 @@ services:
     container_name: virtual-counselor-api
     ports:
       - "3008:3008"
+    env_file:
+      - .env.production
     environment:
       - NODE_ENV=production
       - API_PORT=3008
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      # WEBHOOK_SECRET is provided via env_file (.env.production)
     volumes:
       - ./data:/app/data
       - ./pdf-archieved-catalog:/app/pdf-archieved-catalog:ro
@@ -49,16 +51,20 @@ services:
     container_name: virtual-counselor-n8n
     ports:
       - "3009:5678"
+    env_file:
+      - .env.production
     environment:
       - N8N_BASIC_AUTH_ACTIVE=true
-      - N8N_BASIC_AUTH_USER=${N8N_USER:-admin}
-      - N8N_BASIC_AUTH_PASSWORD=${N8N_PASSWORD}
+      # Provide N8N basic auth credentials via the env_file (.env.production)
+      # Add these keys to your .env.production on the host:
+      # N8N_BASIC_AUTH_USER=admin
+      # N8N_BASIC_AUTH_PASSWORD=<strong-password>
       - N8N_HOST=localhost
       - N8N_PORT=5678
       - N8N_PROTOCOL=http
       - WEBHOOK_URL=http://api:3008
       - GENERIC_TIMEZONE=America/Los_Angeles
-      - WEBHOOK_SECRET=${WEBHOOK_SECRET}
+      # WEBHOOK_SECRET is provided via env_file (.env.production)
     volumes:
       - n8n_data:/home/node/.n8n
     restart: unless-stopped

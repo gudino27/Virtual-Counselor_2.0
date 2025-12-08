@@ -3,7 +3,6 @@
   "version": "2.0.0",
   "description": "WSU Virtual Counselor - Backend API with SQLite",
   "main": "server-sqlite.js",
-  "type": "module",
   "scripts": {
     "start": "node server-sqlite.js",
     "dev": "node --watch server-sqlite.js",
@@ -18,13 +17,17 @@
   "author": "Virtual Counselor Team",
   "license": "MIT",
   "dependencies": {
-    "express": "^4.18.2",
+    "axios": "^1.6.2",
+    "better-sqlite3": "^9.2.2",
     "cors": "^2.8.5",
     "dotenv": "^16.3.1",
-    "better-sqlite3": "^9.2.2",
-    "helmet": "^7.1.0",
+    "exceljs": "^4.4.0",
+    "express": "^4.18.2",
     "express-rate-limit": "^7.1.5",
-    "axios": "^1.6.2"
+    "helmet": "^7.1.0",
+    "sqlite3": "^5.1.7",
+    "winston": "^3.19.0",
+    "zod": "^3.22.4"
   },
   "devDependencies": {
     "nodemon": "^3.0.2"

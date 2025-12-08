@@ -1,0 +1,72 @@
+name: Security Scan
+
+on:
+  schedule:
+    # Run daily at midnight UTC
+    - cron: '0 0 * * *'
+  push:
+    branches: [main, master]
+  workflow_dispatch:  # Allow manual trigger
+
+jobs:
+  audit:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Install backend dependencies
+        run: npm ci
+
+      - name: Run npm audit (backend)
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Install frontend dependencies
+        working-directory: ./virtual-counselor
+        run: npm ci
+
+      - name: Run npm audit (frontend)
+        working-directory: ./virtual-counselor
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Create security report
+        if: always()
+        run: |
+          echo "# Security Audit Report" > security-report.md
+          echo "Date: $(date -u)" >> security-report.md
+          echo "" >> security-report.md
+          echo "## Backend" >> security-report.md
+          npm audit --json 2>/dev/null | jq -r '.metadata.vulnerabilities | to_entries[] | "- \(.key): \(.value)"' >> security-report.md || echo "- No issues found" >> security-report.md
+          echo "" >> security-report.md
+          echo "## Frontend" >> security-report.md
+          cd virtual-counselor && npm audit --json 2>/dev/null | jq -r '.metadata.vulnerabilities | to_entries[] | "- \(.key): \(.value)"' >> ../security-report.md || echo "- No issues found" >> ../security-report.md
+
+      - name: Upload security report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: security-report
+          path: security-report.md
+          retention-days: 30
+
+  # Optional: CodeQL analysis for code vulnerabilities
+  codeql:
+    runs-on: ubuntu-latest
+    permissions:
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: javascript
+
+      - name: Perform CodeQL Analysis
+        uses: github/codeql-action/analyze@v3

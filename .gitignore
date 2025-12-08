@@ -56,3 +56,15 @@ virtual-counselor/test-results/*
 .env.*
 *.md
 data/*
+pdf-archieved-catalog/*.pdf
+pdf-archieved-catalog/*.json
+
+# MCP
+.mcp.json
+virtual-counselor/build/*
+
+scripts/*
+*.bat
+n8n-catalog-updater-fixed.json
+n8n-main.json
+

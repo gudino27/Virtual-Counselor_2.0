@@ -14,6 +14,7 @@ RUN npm ci --only=production
 
 # Copy application files
 COPY server-sqlite.js ./
+COPY logger.js ./
 COPY pdf-archieved-catalog ./pdf-archieved-catalog
 
 # Create data directory

@@ -1,14 +1,18 @@
 const express = require('express');
 const cors = require('cors');
+const helmet = require('helmet');
+const rateLimit = require('express-rate-limit');
 const sqlite3 = require('sqlite3').verbose();
 const path = require('path');
-require('dotenv').config({ path: '.env.development' });
+const fs = require('fs');
+const { logger, httpLogger } = require('./logger');
+require('dotenv').config({ path: '.env.production' });
 
 // Security: Validate required environment variables
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
 if (!WEBHOOK_SECRET) {
-  console.error('❌ WEBHOOK_SECRET not set! Please set it in .env.development before starting.');
-  console.error('   Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
+  logger.error('WEBHOOK_SECRET not set! Please set it in .env.production before starting.');
+  logger.error('Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
   process.exit(1);
 }
 
@@ -39,22 +43,61 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-app.use(express.json({ limit: '50mb' }));
-app.use(express.urlencoded({ extended: true, limit: '50mb' }));
+// Security: Add helmet for secure HTTP headers
+app.use(helmet({
+  contentSecurityPolicy: {
+    directives: {
+      defaultSrc: ["'self'"],
+      styleSrc: ["'self'", "'unsafe-inline'"],
+      scriptSrc: ["'self'"],
+      imgSrc: ["'self'", "data:", "https:"],
+    },
+  },
+  crossOriginEmbedderPolicy: false, // Allow embedding for API responses
+}));
 
-// Logging middleware
-app.use((req, res, next) => {
-  const timestamp = new Date().toISOString();
-  console.log(`[${timestamp}] ${req.method} ${req.path}`);
-  next();
+// Security: Rate limiting for API endpoints
+const apiLimiter = rateLimit({
+  windowMs: parseInt(process.env.API_RATE_LIMIT_WINDOW_MS, 100) || 5 * 60 * 1000, // 5 minutes
+  max: parseInt(process.env.API_RATE_LIMIT_MAX, 100) || 100,
+  message: { error: 'Too many requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
 });
+
+// Security: Stricter rate limiting for webhooks (tunable via env vars)
+const webhookLimiter = rateLimit({
+  windowMs: parseInt(process.env.WEBHOOK_RATE_LIMIT_WINDOW_MS, 10) || 60 * 1000, // 1 minute
+  // Default bumped for internal scrapes; reduce in production if exposed publicly
+  max: parseInt(process.env.WEBHOOK_RATE_LIMIT_MAX, 10) || 200,
+  message: { error: 'Too many webhook calls, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+// Apply rate limiting
+app.use('/api/', apiLimiter);
+
+// Webhook rate limiting can be disabled by setting WEBHOOK_RATE_LIMIT_MAX=0
+if (parseInt(process.env.WEBHOOK_RATE_LIMIT_MAX, 10) === 0) {
+  console.log('⚠️ Webhook rate limiting DISABLED via WEBHOOK_RATE_LIMIT_MAX=0');
+} else {
+  app.use('/webhook/', webhookLimiter);
+}
+
+// Payload size: increased to allow large batch posts from n8n (tunable via env)
+app.use(express.json({ limit: process.env.EXPRESS_JSON_LIMIT || '50mb' }));
+app.use(express.urlencoded({ extended: true, limit: process.env.EXPRESS_JSON_LIMIT || '50mb' }));
+
+// Structured HTTP logging middleware
+app.use(httpLogger);
 
 // Security: Webhook authentication middleware
 const webhookAuth = (req, res, next) => {
   const authHeader = req.headers['authorization'];
 
   if (!authHeader) {
-    console.warn('⚠️  Webhook request rejected: Missing Authorization header');
+    logger.warn('Webhook request rejected: Missing Authorization header', { meta: { ip: req.ip, path: req.path } });
     return res.status(401).json({
       success: false,
       error: 'Unauthorized: Missing Authorization header'
@@ -62,7 +105,7 @@ const webhookAuth = (req, res, next) => {
   }
 
   if (authHeader !== `Bearer ${WEBHOOK_SECRET}`) {
-    console.warn('⚠️  Webhook request rejected: Invalid credentials');
+    logger.warn('Webhook request rejected: Invalid credentials', { meta: { ip: req.ip, path: req.path } });
     return res.status(401).json({
       success: false,
       error: 'Unauthorized: Invalid credentials'
@@ -74,7 +117,6 @@ const webhookAuth = (req, res, next) => {
 };
 
 // Ensure data directory exists
-const fs = require('fs');
 if (!fs.existsSync(DATA_DIR)) {
   fs.mkdirSync(DATA_DIR, { recursive: true });
 }
@@ -85,10 +127,10 @@ if (!fs.existsSync(DATA_DIR)) {
 
 const db = new sqlite3.Database(DB_PATH, (err) => {
   if (err) {
-    console.error('Error opening database:', err);
+    logger.error('Error opening database', { meta: { error: err.message, path: DB_PATH } });
     process.exit(1);
   }
-  console.log(`📦 Connected to SQLite database: ${DB_PATH}`);
+  logger.info(`Connected to SQLite database: ${DB_PATH}`);
 });
 
 // Enable WAL mode for better concurrent access
@@ -337,6 +379,75 @@ db.serialize(() => {
   db.run('CREATE INDEX IF NOT EXISTS idx_enrollment_history_course ON enrollment_history(courseId)');
   db.run('CREATE INDEX IF NOT EXISTS idx_enrollment_history_scraped ON enrollment_history(scrapedAt)');
 
+  // Add external_id column for WSU API degree IDs (migration)
+  db.run('ALTER TABLE catalog_degrees ADD COLUMN external_id TEXT', (err) => {
+    if (err && !err.message.includes('duplicate column')) {
+      console.error('Warning: Could not add external_id column:', err.message);
+    } else if (!err) {
+      console.log('✅ Added external_id column to catalog_degrees');
+    }
+  });
+  
+  // Create table for degree course requirements (sequenceItems from WSU API)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS degree_requirements (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      degree_id INTEGER NOT NULL,
+      catalog_year TEXT NOT NULL,
+      year INTEGER NOT NULL,
+      term INTEGER NOT NULL,
+      label TEXT,
+      hours TEXT,
+      sort_order INTEGER,
+      footnotes TEXT,
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      FOREIGN KEY (degree_id) REFERENCES catalog_degrees(id) ON DELETE CASCADE
+    )
+  `, (err) => {
+    if (err) {
+      console.error('Warning: Could not create degree_requirements table:', err.message);
+    }
+  });
+  
+  db.run('CREATE INDEX IF NOT EXISTS idx_degree_requirements_degree ON degree_requirements(degree_id)', (err) => {
+    if (err && !err.message.includes('already exists')) {
+      console.error('Warning: Could not create index on degree_requirements:', err.message);
+    }
+  });
+
+  // Catalog courses table (courses referenced in degree/program catalogs, separate from live `courses` table)
+  db.run(`
+    CREATE TABLE IF NOT EXISTS catalog_courses (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      unique_id TEXT NOT NULL,
+      catalog_year TEXT NOT NULL,
+      code TEXT,
+      prefix TEXT,
+      number TEXT,
+      title TEXT,
+      description TEXT,
+      credits REAL,
+      credits_phrase TEXT,
+      ucore TEXT,
+      prerequisite_raw TEXT,
+      prerequisite_codes TEXT,
+      offered_raw TEXT,
+      offered_terms TEXT,
+      attributes TEXT,
+      footnotes TEXT,
+      alternatives TEXT,
+      is_non_credit BOOLEAN DEFAULT 0,
+      source_type TEXT DEFAULT 'api',
+      created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+      updated_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+  `, (err) => {
+    if (err) console.error('Warning: Could not create catalog_courses table:', err.message);
+  });
+
+  db.run('CREATE UNIQUE INDEX IF NOT EXISTS idx_catalog_courses_unique ON catalog_courses(unique_id, catalog_year)');
+  db.run('CREATE INDEX IF NOT EXISTS idx_catalog_courses_code ON catalog_courses(code)');
+
   console.log('✅ Database tables created/verified');
 });
 
@@ -372,17 +483,43 @@ function dbAll(sql, params = []) {
   });
 }
 
+// Transaction lock to prevent concurrent transactions (SQLite limitation)
+let transactionLock = Promise.resolve();
+let isInTransaction = false;
+
 // Execute a function within a database transaction
 // Automatically commits on success or rolls back on error
+// Uses a lock to serialize concurrent transaction requests
 async function withTransaction(callback) {
-  await dbRun('BEGIN TRANSACTION');
+  // Wait for any pending transaction to complete
+  const previousLock = transactionLock;
+  let releaseLock;
+  transactionLock = new Promise(resolve => { releaseLock = resolve; });
+
+  await previousLock;
+
+  if (isInTransaction) {
+    // Already in a transaction, just run the callback without wrapping
+    releaseLock();
+    return callback();
+  }
+
+  isInTransaction = true;
   try {
+    await dbRun('BEGIN IMMEDIATE');
     const result = await callback();
     await dbRun('COMMIT');
     return result;
   } catch (error) {
-    await dbRun('ROLLBACK');
+    try {
+      await dbRun('ROLLBACK');
+    } catch (rollbackErr) {
+      logger.error('Rollback failed', { meta: { error: rollbackErr.message } });
+    }
     throw error;
+  } finally {
+    isInTransaction = false;
+    releaseLock();
   }
 }
 
@@ -415,21 +552,9 @@ function sendServerError(res, error) {
   return sendError(res, 500, 'Internal server error', error.message);
 }
 
-// Transaction wrapper - simplified without db.serialize
+// Transaction wrapper - alias for withTransaction (uses same lock)
 async function runInTransaction(callback) {
-  try {
-    await dbRun('BEGIN IMMEDIATE');
-    const result = await callback();
-    await dbRun('COMMIT');
-    return result;
-  } catch (error) {
-    try {
-      await dbRun('ROLLBACK');
-    } catch (rollbackError) {
-      console.error('Rollback error:', rollbackError);
-    }
-    throw error;
-  }
+  return withTransaction(callback);
 }
 
 // ============================================
@@ -523,15 +648,15 @@ app.get('/api/prefixes', async (req, res) => {
     let params = [];
     
     if (term) {
-      whereClauses.push('term = ?');
+      whereClauses.push('LOWER(term) = LOWER(?)');
       params.push(term);
     }
     if (year) {
       whereClauses.push('year = ?');
-      params.push(parseInt(year));
+      params.push(parseInt(year, 10));
     }
     if (campus) {
-      whereClauses.push('campus = ?');
+      whereClauses.push('LOWER(campus) = LOWER(?)');
       params.push(campus);
     }
     
@@ -572,12 +697,36 @@ app.get('/api/degrees', async (req, res) => {
     
     const whereClause = 'WHERE ' + whereClauses.join(' AND ');
     
-    const degrees = await dbAll(`
-      SELECT id, catalog_year, name, credits, degree_type, college, url
+    const allDegrees = await dbAll(`
+      SELECT id, catalog_year, name, credits, degree_type, college, url, source_type, external_id, narrative
       FROM catalog_degrees 
       ${whereClause}
-      ORDER BY name
+      ORDER BY name, source_type DESC
     `, params);
+    
+    // Deduplicate by name (case-insensitive), preferring 'api' over 'catalog_json'
+    const deduped = new Map();
+    for (const degree of allDegrees) {
+      const key = degree.name.toLowerCase();
+      const existing = deduped.get(key);
+      
+      // Keep this entry if: no existing entry, or this is from API and existing is from catalog_json
+      if (!existing || (degree.source_type === 'api' && existing.source_type === 'catalog_json')) {
+        deduped.set(key, degree);
+      }
+    }
+    
+    const degrees = Array.from(deduped.values()).map(d => ({
+      id: d.id,
+      catalog_year: d.catalog_year,
+      name: d.name,
+      credits: d.credits,
+      degree_type: d.degree_type,
+      college: d.college,
+      url: d.url,
+      external_id: d.external_id,
+      narrative: d.narrative
+    }));
     
     // Get available years for dropdown
     const years = await dbAll(`
@@ -597,8 +746,8 @@ app.get('/api/degrees', async (req, res) => {
   }
 });
 
-// Get degree requirements from WSU Catalog API
-// This fetches the full course sequence for a specific degree program
+// Get degree requirements from database or WSU Catalog API
+// First tries database (for saved requirements), then falls back to WSU API
 app.get('/api/degree-requirements', async (req, res) => {
   try {
     const { name, acadUnitId: providedAcadUnitId } = req.query;
@@ -607,11 +756,91 @@ app.get('/api/degree-requirements', async (req, res) => {
       return res.status(400).json({ error: 'Degree name is required' });
     }
     
-    const fetch = require('node-fetch');
+    // STEP 1: Try to fetch from database first
+    const dbDegree = await dbGet(
+      'SELECT id, name, credits, college, url, catalog_year, narrative FROM catalog_degrees WHERE name = ? ORDER BY catalog_year DESC LIMIT 1',
+      [name]
+    );
     
-    // First, get all degrees to find the acadUnitId
+    if (dbDegree) {
+      // Check if we have course requirements saved
+      const requirements = await dbAll(
+        'SELECT year, term, label, hours, sort_order, footnotes FROM degree_requirements WHERE degree_id = ? ORDER BY year, term, sort_order',
+        [dbDegree.id]
+      );
+      
+      if (requirements.length > 0) {
+        // We have saved requirements - use them!
+        console.log(`✅ Loaded ${requirements.length} course requirements from database for "${name}"`);
+        
+        // Group by year and term
+        const coursesByYearTerm = {};
+        let totalCredits = 0;
+        
+        for (const item of requirements) {
+          const key = `${item.year}-${item.term}`;
+          if (!coursesByYearTerm[key]) {
+            coursesByYearTerm[key] = {
+              year: item.year,
+              term: item.term,
+              termName: item.term === 1 ? 'Fall' : item.term === 2 ? 'Spring' : 'Summer',
+              courses: []
+            };
+          }
+          
+          const credits = item.hours ? parseInt(item.hours, 10) : null;
+          const courseInfo = parseCourseLabel(item.label, credits);
+          
+          // Parse footnotes from JSON
+          if (item.footnotes) {
+            try {
+              courseInfo.footnotes = JSON.parse(item.footnotes);
+            } catch (e) {
+              courseInfo.footnotes = [];
+            }
+          } else {
+            courseInfo.footnotes = [];
+          }
+          
+          // Only add courses that have credits
+          if (credits && credits > 0) {
+            coursesByYearTerm[key].courses.push(courseInfo);
+            totalCredits += credits;
+          } else if (!credits) {
+            courseInfo.isNonCredit = true;
+            coursesByYearTerm[key].courses.push(courseInfo);
+          }
+        }
+        
+        const schedule = Object.values(coursesByYearTerm).sort((a, b) => {
+          if (a.year !== b.year) return a.year - b.year;
+          return a.term - b.term;
+        });
+        
+        return res.json({
+          degree: {
+            title: dbDegree.name,
+            totalHours: dbDegree.credits,
+            narrative: dbDegree.narrative,
+            acadUnit: dbDegree.college
+          },
+          schedule,
+          totalCoursesInSequence: requirements.length,
+          estimatedCredits: totalCredits,
+          source: 'database'
+        });
+      }
+    }
+    
+    // STEP 2: Fall back to WSU API if not in database
+    console.log(`⚠️ No saved requirements for "${name}", fetching from WSU API...`);
+    
     let acadUnitId = providedAcadUnitId;
     let degreeInfo = null;
+    
+    if (!acadUnitId && dbDegree?.external_id) {
+      acadUnitId = dbDegree.external_id;
+    }
     
     if (!acadUnitId) {
       const degreesResponse = await fetch('https://catalog.wsu.edu/api/Data/GetDegreesDropdown/General');
@@ -675,7 +904,7 @@ app.get('/api/degree-requirements', async (req, res) => {
       
       // Parse the course label to extract prefix, number, credits, and attributes
       // Credits come from the 'hours' field in the API response
-      const credits = item.hours ? parseInt(item.hours) : null;
+      const credits = item.hours ? parseInt(item.hours, 10) : null;
       const courseInfo = parseCourseLabel(item.label, credits);
       
       // Add footnotes to the course info
@@ -708,7 +937,8 @@ app.get('/api/degree-requirements', async (req, res) => {
       },
       schedule,
       totalCoursesInSequence: program.sequenceItems?.length || 0,
-      estimatedCredits: totalCredits
+      estimatedCredits: totalCredits,
+      source: 'api'
     });
     
   } catch (error) {
@@ -753,7 +983,7 @@ function parseCourseLabel(label, credits = null) {
   if (!result.credits) {
     const creditsMatch = cleanLabel.match(/\s(\d+)$/);
     if (creditsMatch) {
-      result.credits = parseInt(creditsMatch[1]);
+      result.credits = parseInt(creditsMatch[1], 10);
       cleanLabel = cleanLabel.replace(/\s\d+$/, '').trim();
     }
   }
@@ -867,35 +1097,43 @@ app.get('/api/courses', async (req, res) => {
     let params = [];
 
     if (campus) {
-      whereClauses.push('campus = ?');
+      whereClauses.push('LOWER(campus) = LOWER(?)');
       params.push(campus);
     }
     if (term) {
-      whereClauses.push('term = ?');
+      whereClauses.push('LOWER(term) = LOWER(?)');
       params.push(term);
     }
     if (year) {
       whereClauses.push('year = ?');
-      params.push(parseInt(year));
+      params.push(parseInt(year, 10));
     }
     if (prefix) {
-      whereClauses.push('prefix = ?');
-      params.push(prefix.toUpperCase());
+      whereClauses.push('LOWER(prefix) = LOWER(?)');
+      params.push(prefix);
     }
     if (seatsAvailable) {
       whereClauses.push('seatsAvailable >= ?');
-      params.push(parseInt(seatsAvailable));
+      params.push(parseInt(seatsAvailable, 10));
     }
     if (search) {
-      whereClauses.push('(prefix LIKE ? OR title LIKE ? OR instructor LIKE ? OR courseNumber LIKE ?)');
+      // Case-insensitive search with support for variations like "cpts" matching "Cpt S"
+      whereClauses.push(`(
+        LOWER(prefix) LIKE LOWER(?) OR 
+        LOWER(title) LIKE LOWER(?) OR 
+        LOWER(instructor) LIKE LOWER(?) OR 
+        LOWER(courseNumber) LIKE LOWER(?) OR
+        LOWER(REPLACE(prefix, ' ', '')) LIKE LOWER(REPLACE(?, ' ', '')) OR
+        LOWER(prefix || ' ' || courseNumber) LIKE LOWER(?)
+      )`);
       const searchTerm = `%${search}%`;
-      params.push(searchTerm, searchTerm, searchTerm, searchTerm);
+      params.push(searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, searchTerm);
     }
 
     const whereClause = whereClauses.length > 0 ? 'WHERE ' + whereClauses.join(' AND ') : '';
 
     const offset = (page - 1) * limit;
-    const queryParams = [...params, parseInt(limit), offset];
+    const queryParams = [...params, parseInt(limit, 10), offset];
     const countParams = [...params];
 
     const [courses, total] = await Promise.all([
@@ -906,8 +1144,8 @@ app.get('/api/courses', async (req, res) => {
     res.json({
       courses,
       total: total.count,
-      page: parseInt(page),
-      limit: parseInt(limit),
+      page: parseInt(page, 10),
+      limit: parseInt(limit, 10),
       totalPages: Math.ceil(total.count / limit)
     });
   } catch (error) {
@@ -928,11 +1166,13 @@ app.get('/api/courses/search', async (req, res) => {
     const searchTerm = `%${q}%`;
     const courses = await dbAll(`
       SELECT * FROM courses
-      WHERE prefix LIKE ?
-         OR courseNumber LIKE ?
-         OR title LIKE ?
+      WHERE LOWER(prefix) LIKE LOWER(?)
+         OR LOWER(courseNumber) LIKE LOWER(?)
+         OR LOWER(title) LIKE LOWER(?)
+         OR LOWER(REPLACE(prefix, ' ', '')) LIKE LOWER(REPLACE(?, ' ', ''))
+         OR LOWER(prefix || ' ' || courseNumber) LIKE LOWER(?)
       LIMIT ?
-    `, [searchTerm, searchTerm, searchTerm, parseInt(limit)]);
+    `, [searchTerm, searchTerm, searchTerm, searchTerm, searchTerm, parseInt(limit, 10)]);
 
     res.json({ courses, total: courses.length });
   } catch (error) {
@@ -947,7 +1187,7 @@ app.get('/api/courses/available', async (req, res) => {
     const { campus, term, year, minSeats = 1 } = req.query;
 
     let whereClauses = ['seatsAvailable >= ?'];
-    let params = [parseInt(minSeats)];
+    let params = [parseInt(minSeats, 10)];
 
     if (campus) {
       whereClauses.push('campus = ?');
@@ -959,7 +1199,7 @@ app.get('/api/courses/available', async (req, res) => {
     }
     if (year) {
       whereClauses.push('year = ?');
-      params.push(parseInt(year));
+      params.push(parseInt(year, 10));
     }
 
     const courses = await dbAll(`
@@ -1014,178 +1254,195 @@ app.post('/webhook/courses', webhookAuth, async (req, res) => {
       });
     }
 
-    console.log(`📊 Processing ${courseData.length} courses`);
+    console.log(`📊 Processing ${courseData.length} courses (chunked commit)`);
 
     let added = 0;
     let updated = 0;
     let historyRecorded = 0;
+    let failed = 0;
+    const failures = [];
 
-    // Use transaction to ensure all course inserts/updates succeed or all fail
-    await withTransaction(async () => {
-      // Process each course directly - SQLite WAL mode handles concurrency
-      for (const course of courseData) {
-        if (!course || !course.campus || !course.term || !course.year) {
-          console.log('⚠️  Skipping invalid course data');
-          continue;
+    // Commit in smaller transactions to avoid full-batch rollback on a single bad record
+    const batchSize = parseInt(process.env.WEBHOOK_BATCH_COMMIT_SIZE, 10) || 50;
+
+    for (let i = 0; i < courseData.length; i += batchSize) {
+      const chunk = courseData.slice(i, i + batchSize);
+
+      await withTransaction(async () => {
+        for (const course of chunk) {
+          try {
+            if (!course || !course.campus || !course.term || !course.year) {
+              console.log('⚠️  Skipping invalid course data');
+              continue;
+            }
+
+            const uniqueId = `${course.campus}-${course.term}-${course.year}-${course.prefix}-${course.courseNumber}-${course.sectionNumber}-${course.isLab}`;
+
+            // Check if course exists
+            const existing = await dbGet('SELECT id FROM courses WHERE uniqueId = ?', [uniqueId]);
+
+            if (existing) {
+              // Update existing course
+              await dbRun(`
+                UPDATE courses SET
+                  subject = ?,
+                  title = ?,
+                  sectionTitle = ?,
+                  credits = ?,
+                  instructor = ?,
+                  sln = ?,
+                  courseDescription = ?,
+                  coursePrerequisite = ?,
+                  sectionComment = ?,
+                  sectionUrl = ?,
+                  dayTime = ?,
+                  location = ?,
+                  site = ?,
+                  startDate = ?,
+                  endDate = ?,
+                  seatsAvailable = ?,
+                  maxEnrollment = ?,
+                  currentEnrollment = ?,
+                  waitlistAvailable = ?,
+                  waitlistCapacity = ?,
+                  waitlistCount = ?,
+                  status = ?,
+                  dateLastAuditToCredit = ?,
+                  dateLastCreditToAudit = ?,
+                  dateLastFinalGradeSubmit = ?,
+                  dateLastInstruction = ?,
+                  dateLastLtrGradeToPf = ?,
+                  dateLastPftoLtrGrade = ?,
+                  dateLastRegWithoutFee = ?,
+                  dateLastStdAdd = ?,
+                  dateLastStdDrop = ?,
+                  dateLastWdrwl = ?,
+                  dateRegBegin = ?,
+                  dateRegEnd = ?,
+                  slnrestrict = ?,
+                  ger = ?,
+                  diversity = ?,
+                  writing = ?,
+                  courseFee = ?,
+                  isMultipleFees = ?,
+                  titleAllowed = ?,
+                  showInstructors = ?,
+                  ucore = ?,
+                  coop = ?,
+                  schedulePrint = ?,
+                  instructionMode = ?,
+                  session = ?,
+                  consent = ?,
+                  minUnits = ?,
+                  maxUnits = ?,
+                  gradCaps = ?,
+                  footnotes = ?,
+                  instructors = ?,
+                  meetings = ?,
+                  scrapedAt = CURRENT_TIMESTAMP,
+                  updatedAt = CURRENT_TIMESTAMP
+                WHERE uniqueId = ?
+              `, [
+                course.subject, course.title, course.sectionTitle, course.credits, course.instructor, course.sln,
+                course.courseDescription, course.coursePrerequisite, course.sectionComment, course.sectionUrl,
+                course.dayTime, course.location, course.site, course.startDate, course.endDate,
+                course.seatsAvailable, course.maxEnrollment, course.currentEnrollment,
+                course.waitlistAvailable, course.waitlistCapacity, course.waitlistCount, course.status,
+                course.dateLastAuditToCredit, course.dateLastCreditToAudit, course.dateLastFinalGradeSubmit,
+                course.dateLastInstruction, course.dateLastLtrGradeToPf, course.dateLastPftoLtrGrade,
+                course.dateLastRegWithoutFee, course.dateLastStdAdd, course.dateLastStdDrop, course.dateLastWdrwl,
+                course.dateRegBegin, course.dateRegEnd,
+                course.slnrestrict, course.ger, course.diversity, course.writing, course.courseFee, course.isMultipleFees,
+                course.titleAllowed, course.showInstructors, course.ucore, course.coop, course.schedulePrint,
+                course.instructionMode, course.session, course.consent, course.minUnits, course.maxUnits, course.gradCaps, course.footnotes,
+                JSON.stringify(course.instructors || []), JSON.stringify(course.meetings || []),
+                uniqueId
+              ]);
+
+              // Record enrollment history
+              await dbRun(`
+                INSERT INTO enrollment_history
+                (courseId, uniqueId, seatsAvailable, currentEnrollment, waitlistCount)
+                VALUES (?, ?, ?, ?, ?)
+              `, [
+                existing.id, uniqueId,
+                course.seatsAvailable, course.currentEnrollment, course.waitlistCount
+              ]);
+
+              updated++;
+              historyRecorded++;
+            } else {
+              // Insert new course
+              const insertResult = await dbRun(`
+                INSERT INTO courses (
+                  uniqueId, campus, term, year, prefix, subject, courseNumber, sectionNumber, isLab,
+                  title, sectionTitle, credits, instructor, sln,
+                  courseDescription, coursePrerequisite, sectionComment, sectionUrl,
+                  dayTime, location, site, startDate, endDate,
+                  seatsAvailable, maxEnrollment, currentEnrollment,
+                  waitlistAvailable, waitlistCapacity, waitlistCount, status,
+                  dateLastAuditToCredit, dateLastCreditToAudit, dateLastFinalGradeSubmit,
+                  dateLastInstruction, dateLastLtrGradeToPf, dateLastPftoLtrGrade,
+                  dateLastRegWithoutFee, dateLastStdAdd, dateLastStdDrop, dateLastWdrwl,
+                  dateRegBegin, dateRegEnd,
+                  slnrestrict, ger, diversity, writing, courseFee, isMultipleFees,
+                  titleAllowed, showInstructors, ucore, coop, schedulePrint,
+                  instructionMode, session, consent, minUnits, maxUnits, gradCaps, footnotes,
+                  instructors, meetings
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+              `, [
+                uniqueId, course.campus, course.term, course.year,
+                course.prefix, course.subject, course.courseNumber, course.sectionNumber, course.isLab,
+                course.title, course.sectionTitle, course.credits, course.instructor, course.sln,
+                course.courseDescription, course.coursePrerequisite, course.sectionComment, course.sectionUrl,
+                course.dayTime, course.location, course.site, course.startDate, course.endDate,
+                course.seatsAvailable, course.maxEnrollment, course.currentEnrollment,
+                course.waitlistAvailable, course.waitlistCapacity, course.waitlistCount, course.status,
+                course.dateLastAuditToCredit, course.dateLastCreditToAudit, course.dateLastFinalGradeSubmit,
+                course.dateLastInstruction, course.dateLastLtrGradeToPf, course.dateLastPftoLtrGrade,
+                course.dateLastRegWithoutFee, course.dateLastStdAdd, course.dateLastStdDrop, course.dateLastWdrwl,
+                course.dateRegBegin, course.dateRegEnd,
+                course.slnrestrict, course.ger, course.diversity, course.writing, course.courseFee, course.isMultipleFees,
+                course.titleAllowed, course.showInstructors, course.ucore, course.coop, course.schedulePrint,
+                course.instructionMode, course.session, course.consent, course.minUnits, course.maxUnits, course.gradCaps, course.footnotes,
+                JSON.stringify(course.instructors || []), JSON.stringify(course.meetings || [])
+              ]);
+
+              // Record initial enrollment state
+              await dbRun(`
+                INSERT INTO enrollment_history
+                (courseId, uniqueId, seatsAvailable, currentEnrollment, waitlistCount)
+                VALUES (?, ?, ?, ?, ?)
+              `, [
+                insertResult.lastID, uniqueId,
+                course.seatsAvailable, course.currentEnrollment, course.waitlistCount
+              ]);
+
+              added++;
+              historyRecorded++;
+            }
+          } catch (itemErr) {
+            failed++;
+            failures.push({ error: itemErr.message, course: { prefix: course && course.prefix, courseNumber: course && course.courseNumber, sectionNumber: course && course.sectionNumber } });
+            logger.error('Error processing a course in webhook chunk', { meta: { error: itemErr.message, course } });
+            // continue processing remaining courses in this chunk
+            continue;
+          }
         }
-
-        const uniqueId = `${course.campus}-${course.term}-${course.year}-${course.prefix}-${course.courseNumber}-${course.sectionNumber}-${course.isLab}`;
-
-        // Check if course exists
-        const existing = await dbGet('SELECT id FROM courses WHERE uniqueId = ?', [uniqueId]);
-
-        if (existing) {
-          // Update existing course
-          await dbRun(`
-            UPDATE courses SET
-              subject = ?,
-              title = ?,
-              sectionTitle = ?,
-              credits = ?,
-              instructor = ?,
-              sln = ?,
-              courseDescription = ?,
-              coursePrerequisite = ?,
-              sectionComment = ?,
-              sectionUrl = ?,
-              dayTime = ?,
-              location = ?,
-              site = ?,
-              startDate = ?,
-              endDate = ?,
-              seatsAvailable = ?,
-              maxEnrollment = ?,
-              currentEnrollment = ?,
-              waitlistAvailable = ?,
-              waitlistCapacity = ?,
-              waitlistCount = ?,
-              status = ?,
-              dateLastAuditToCredit = ?,
-              dateLastCreditToAudit = ?,
-              dateLastFinalGradeSubmit = ?,
-              dateLastInstruction = ?,
-              dateLastLtrGradeToPf = ?,
-              dateLastPftoLtrGrade = ?,
-              dateLastRegWithoutFee = ?,
-              dateLastStdAdd = ?,
-              dateLastStdDrop = ?,
-              dateLastWdrwl = ?,
-              dateRegBegin = ?,
-              dateRegEnd = ?,
-              slnrestrict = ?,
-              ger = ?,
-              diversity = ?,
-              writing = ?,
-              courseFee = ?,
-              isMultipleFees = ?,
-              titleAllowed = ?,
-              showInstructors = ?,
-              ucore = ?,
-              coop = ?,
-              schedulePrint = ?,
-              instructionMode = ?,
-              session = ?,
-              consent = ?,
-              minUnits = ?,
-              maxUnits = ?,
-              gradCaps = ?,
-              footnotes = ?,
-              instructors = ?,
-              meetings = ?,
-              scrapedAt = CURRENT_TIMESTAMP,
-              updatedAt = CURRENT_TIMESTAMP
-            WHERE uniqueId = ?
-          `, [
-            course.subject, course.title, course.sectionTitle, course.credits, course.instructor, course.sln,
-            course.courseDescription, course.coursePrerequisite, course.sectionComment, course.sectionUrl,
-            course.dayTime, course.location, course.site, course.startDate, course.endDate,
-            course.seatsAvailable, course.maxEnrollment, course.currentEnrollment,
-            course.waitlistAvailable, course.waitlistCapacity, course.waitlistCount, course.status,
-            course.dateLastAuditToCredit, course.dateLastCreditToAudit, course.dateLastFinalGradeSubmit,
-            course.dateLastInstruction, course.dateLastLtrGradeToPf, course.dateLastPftoLtrGrade,
-            course.dateLastRegWithoutFee, course.dateLastStdAdd, course.dateLastStdDrop, course.dateLastWdrwl,
-            course.dateRegBegin, course.dateRegEnd,
-            course.slnrestrict, course.ger, course.diversity, course.writing, course.courseFee, course.isMultipleFees,
-            course.titleAllowed, course.showInstructors, course.ucore, course.coop, course.schedulePrint,
-            course.instructionMode, course.session, course.consent, course.minUnits, course.maxUnits, course.gradCaps, course.footnotes,
-            JSON.stringify(course.instructors || []), JSON.stringify(course.meetings || []),
-            uniqueId
-          ]);
-
-          // Record enrollment history
-          await dbRun(`
-            INSERT INTO enrollment_history
-            (courseId, uniqueId, seatsAvailable, currentEnrollment, waitlistCount)
-            VALUES (?, ?, ?, ?, ?)
-          `, [
-            existing.id, uniqueId,
-            course.seatsAvailable, course.currentEnrollment, course.waitlistCount
-          ]);
-
-          updated++;
-          historyRecorded++;
-        } else {
-          // Insert new course
-          const insertResult = await dbRun(`
-            INSERT INTO courses (
-              uniqueId, campus, term, year, prefix, subject, courseNumber, sectionNumber, isLab,
-              title, sectionTitle, credits, instructor, sln,
-              courseDescription, coursePrerequisite, sectionComment, sectionUrl,
-              dayTime, location, site, startDate, endDate,
-              seatsAvailable, maxEnrollment, currentEnrollment,
-              waitlistAvailable, waitlistCapacity, waitlistCount, status,
-              dateLastAuditToCredit, dateLastCreditToAudit, dateLastFinalGradeSubmit,
-              dateLastInstruction, dateLastLtrGradeToPf, dateLastPftoLtrGrade,
-              dateLastRegWithoutFee, dateLastStdAdd, dateLastStdDrop, dateLastWdrwl,
-              dateRegBegin, dateRegEnd,
-              slnrestrict, ger, diversity, writing, courseFee, isMultipleFees,
-              titleAllowed, showInstructors, ucore, coop, schedulePrint,
-              instructionMode, session, consent, minUnits, maxUnits, gradCaps, footnotes,
-              instructors, meetings
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-          `, [
-            uniqueId, course.campus, course.term, course.year,
-            course.prefix, course.subject, course.courseNumber, course.sectionNumber, course.isLab,
-            course.title, course.sectionTitle, course.credits, course.instructor, course.sln,
-            course.courseDescription, course.coursePrerequisite, course.sectionComment, course.sectionUrl,
-            course.dayTime, course.location, course.site, course.startDate, course.endDate,
-            course.seatsAvailable, course.maxEnrollment, course.currentEnrollment,
-            course.waitlistAvailable, course.waitlistCapacity, course.waitlistCount, course.status,
-            course.dateLastAuditToCredit, course.dateLastCreditToAudit, course.dateLastFinalGradeSubmit,
-            course.dateLastInstruction, course.dateLastLtrGradeToPf, course.dateLastPftoLtrGrade,
-            course.dateLastRegWithoutFee, course.dateLastStdAdd, course.dateLastStdDrop, course.dateLastWdrwl,
-            course.dateRegBegin, course.dateRegEnd,
-            course.slnrestrict, course.ger, course.diversity, course.writing, course.courseFee, course.isMultipleFees,
-            course.titleAllowed, course.showInstructors, course.ucore, course.coop, course.schedulePrint,
-            course.instructionMode, course.session, course.consent, course.minUnits, course.maxUnits, course.gradCaps, course.footnotes,
-            JSON.stringify(course.instructors || []), JSON.stringify(course.meetings || [])
-          ]);
-
-          // Record initial enrollment state
-          await dbRun(`
-            INSERT INTO enrollment_history
-            (courseId, uniqueId, seatsAvailable, currentEnrollment, waitlistCount)
-            VALUES (?, ?, ?, ?, ?)
-          `, [
-            insertResult.lastID, uniqueId,
-            course.seatsAvailable, course.currentEnrollment, course.waitlistCount
-          ]);
-
-          added++;
-          historyRecorded++;
-        }
-      }
-    }); // End transaction
+      }); // end chunk transaction
+    }
 
     const duration = Date.now() - startTime;
 
-    console.log(`✅ Processed in ${duration}ms (${added} added, ${updated} updated, ${historyRecorded} history records)`);
+    console.log(`✅ Processed in ${duration}ms (${added} added, ${updated} updated, ${historyRecorded} history records, ${failed} failed)`);
 
     res.json({
       status: 'success',
       added,
       updated,
       historyRecorded,
+      failed,
+      sampleFailures: failures.slice(0,5),
       duration: `${duration}ms`
     });
 
@@ -1199,7 +1456,7 @@ app.post('/webhook/courses', webhookAuth, async (req, res) => {
 });
 
 // Webhook for catalog PDFs (archived catalogs)
-app.post('/webhook/catalog-pdf', async (req, res) => {
+app.post('/webhook/catalog-pdf', webhookAuth, async (req, res) => {
   try {
     const pdfData = Array.isArray(req.body) ? req.body : [req.body];
     let added = 0;
@@ -1311,7 +1568,7 @@ app.get('/api/catalog-pdfs/:id/download', async (req, res) => {
 });
 
 // Webhook for degrees
-app.post('/webhook/degrees', async (req, res) => {
+app.post('/webhook/degrees', webhookAuth, async (req, res) => {
   try {
     const degreeData = Array.isArray(req.body) ? req.body : [req.body];
     let added = 0;
@@ -1352,7 +1609,7 @@ app.post('/webhook/degrees', async (req, res) => {
 // Used by both API scraper and PDF parser
 // catalogYear is REQUIRED to prevent overwrites
 // ============================================
-app.post('/webhook/department', async (req, res) => {
+app.post('/webhook/department', webhookAuth, async (req, res) => {
   const startTime = Date.now();
   
   try {
@@ -1846,7 +2103,7 @@ app.post('/api/catalog/init', async (req, res) => {
 });
 
 // Webhook to save catalog programs (unified format from HTML or PDF)
-app.post('/webhook/catalog-programs', async (req, res) => {
+app.post('/webhook/catalog-programs', webhookAuth, async (req, res) => {
   try {
     const { catalogYear, degrees = [], minors = [], certificates = [], sourceType = 'html' } = req.body;
     
@@ -1868,10 +2125,10 @@ app.post('/webhook/catalog-programs', async (req, res) => {
     // Insert degrees
     for (const degree of degrees) {
       try {
-        await dbRun(
+        const result = await dbRun(
           `INSERT OR REPLACE INTO catalog_degrees 
-           (name, credits, catalog_year, degree_type, college, url, source_type) 
-           VALUES (?, ?, ?, ?, ?, ?, ?)`,
+           (name, credits, catalog_year, degree_type, college, url, source_type, external_id, narrative) 
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             degree.name, 
             degree.totalCredits || degree.credits || null,
@@ -1879,9 +2136,39 @@ app.post('/webhook/catalog-programs', async (req, res) => {
             degree.degreeType || null,
             degree.college || null,
             degree.url || null,
-            sourceType
+            sourceType,
+            degree.externalId || null,
+            degree.narrative || null
           ]
         );
+        
+        const degreeId = result.lastID;
+        
+        // Save course requirements (sequenceItems) if provided
+        if (degree.sequenceItems && Array.isArray(degree.sequenceItems)) {
+          // Delete existing requirements for this degree
+          await dbRun('DELETE FROM degree_requirements WHERE degree_id = ?', [degreeId]);
+          
+          // Insert new requirements
+          for (const item of degree.sequenceItems) {
+            await dbRun(
+              `INSERT INTO degree_requirements 
+               (degree_id, catalog_year, year, term, label, hours, sort_order, footnotes)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+              [
+                degreeId,
+                catalogYear,
+                item.year || null,
+                item.term || null,
+                item.label || null,
+                item.hours || null,
+                item.sortOrder || null,
+                item.footnotes ? JSON.stringify(item.footnotes) : null
+              ]
+            );
+          }
+        }
+        
         results.added.degrees++;
       } catch (err) {
         results.errors.push({ type: 'degree', name: degree.name, error: err.message });
@@ -1916,6 +2203,126 @@ app.post('/webhook/catalog-programs', async (req, res) => {
       } catch (err) {
         results.errors.push({ type: 'certificate', name: cert.name, error: err.message });
       }
+    }
+
+    // Helper: extract course codes from free text (fallback when prereq arrays are missing)
+    const extractCourseCodes = (text) => {
+      if (!text || typeof text !== 'string') return [];
+      // Find tokens like 'CPTS 121', 'CPT S 121', 'MATH 171', etc.
+      // Allow optional spaces inside alpha portion and optional punctuation.
+      const re = /([A-Za-z]{1,8}(?:\s+[A-Za-z])?(?:\s*)[-–:]?\s*\d{3})/g;
+      const matches = [];
+      const blacklist = new Set(['OR', 'AND', 'ONE', 'BY', 'WITH', 'A', 'THE', 'OR,']);
+      let m;
+      while ((m = re.exec(text)) !== null) {
+        let code = m[1].toUpperCase();
+        // Normalize spaces inside the alpha part: e.g. 'CPT S 121' -> 'CPTS 121'
+        code = code.replace(/([A-Z])\s+(?=[A-Z])/g, '$1');
+        // Collapse multiple spaces
+        code = code.replace(/\s+/g, ' ');
+        // Ensure format PREFIX NUMBER
+        const parts = code.split(' ');
+        if (parts.length >= 2) {
+          const num = parts.pop();
+          const prefix = parts.join('').replace(/[^A-Z]/g, '');
+          if (!prefix || prefix.length < 2) continue; // ignore tiny prefixes
+          if (blacklist.has(prefix)) continue;
+          // basic sanity: number should be 3 digits
+          if (!/^\d{3}$/.test(num)) continue;
+          matches.push(`${prefix} ${num}`);
+        }
+      }
+      // Deduplicate preserving order
+      return [...new Set(matches)];
+    };
+
+    // Insert catalog courses (normalized course descriptions/prereqs offered by n8n)
+    if (req.body.courses && Array.isArray(req.body.courses)) {
+      results.added.courses = 0;
+      for (const c of req.body.courses) {
+        try {
+          // Build prerequisite codes fallback: prefer provided array, else parse raw text
+          let prereqCodesJson = null;
+          if (c.prerequisiteCodes && Array.isArray(c.prerequisiteCodes) && c.prerequisiteCodes.length) {
+            prereqCodesJson = JSON.stringify(c.prerequisiteCodes);
+          } else if (c.prerequisiteRaw || c.prerequisite_raw) {
+            const parsed = extractCourseCodes(c.prerequisiteRaw || c.prerequisite_raw);
+            prereqCodesJson = parsed.length ? JSON.stringify(parsed) : null;
+            // also set on object for any downstream use
+            if (parsed.length) c.prerequisiteCodes = parsed;
+          }
+
+          await dbRun(
+            `INSERT OR REPLACE INTO catalog_courses
+             (unique_id, catalog_year, code, prefix, number, title, description, credits, credits_phrase,
+              ucore, prerequisite_raw, prerequisite_codes, offered_raw, offered_terms, attributes, footnotes,
+              alternatives, is_non_credit, source_type)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+            [
+              c.uniqueId || c.unique_id || c.code || null,
+              catalogYear,
+              c.code || null,
+              c.prefix || null,
+              c.number || null,
+              c.title || null,
+              c.description || null,
+              (c.credits !== undefined && c.credits !== null) ? c.credits : null,
+              c.creditsPhrase || c.credits_phrase || null,
+              c.ucore || null,
+              c.prerequisiteRaw || c.prerequisite_raw || null,
+              prereqCodesJson,
+              c.offeredRaw || c.offered_raw || null,
+              c.offeredTerms ? JSON.stringify(c.offeredTerms) : null,
+              c.attributes ? JSON.stringify(c.attributes) : null,
+              c.footnotes ? JSON.stringify(c.footnotes) : null,
+              c.alternatives ? JSON.stringify(c.alternatives) : null,
+              c.isNonCredit || c.is_non_credit || 0,
+              sourceType
+            ]
+          );
+          results.added.courses++;
+        } catch (err) {
+          results.errors.push({ type: 'catalog_course', code: c.code || c.uniqueId, error: err.message });
+        }
+      }
+    }
+
+    // Repair existing catalog rows for this year: parse prerequisite_raw for rows
+    // where prerequisite_codes is missing, empty, or contains obvious bad tokens.
+    const repairCatalogPrereqs = async (year) => {
+      try {
+        const rows = await dbAll(
+          `SELECT id, code, prerequisite_raw, prerequisite_codes FROM catalog_courses
+           WHERE catalog_year = ? AND (prerequisite_codes IS NULL OR prerequisite_codes = '[]' OR prerequisite_codes LIKE '%"OR %' OR prerequisite_codes LIKE '%"AND %' OR prerequisite_codes LIKE '%"ONE %')
+           AND prerequisite_raw IS NOT NULL AND prerequisite_raw <> ''`,
+          [year]
+        );
+
+        if (!rows || rows.length === 0) return { updated: 0 };
+        let updated = 0;
+        for (const r of rows) {
+          const parsed = extractCourseCodes(r.prerequisite_raw);
+          if (parsed && parsed.length) {
+            await dbRun('UPDATE catalog_courses SET prerequisite_codes = ? WHERE id = ?', [JSON.stringify(parsed), r.id]);
+            updated++;
+          }
+        }
+        return { updated };
+      } catch (err) {
+        console.error('Error repairing catalog prereqs:', err);
+        return { updated: 0, error: err.message };
+      }
+    };
+
+    // Run repair for this catalog year so newly posted or pre-existing rows get normalized.
+    try {
+      const repairResult = await repairCatalogPrereqs(catalogYear);
+      if (repairResult && repairResult.updated) {
+        console.log(`🔧 Repaired ${repairResult.updated} prerequisite_codes for catalog year ${catalogYear}`);
+        results.repaired = repairResult.updated;
+      }
+    } catch (err) {
+      console.error('Repair step failed:', err);
     }
     
     console.log(`📥 Catalog programs saved for ${catalogYear}: ${results.added.degrees} degrees, ${results.added.minors} minors, ${results.added.certificates} certificates`);
@@ -1958,6 +2365,99 @@ app.get('/api/catalog/summary', async (req, res) => {
   } catch (error) {
     console.error('Error getting catalog summary:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// Get catalog courses (parsed fields) for a given year
+app.get('/api/catalog/courses', async (req, res) => {
+  try {
+    // Supported filters: year, code, prefix, ucore, minCredits, maxCredits, term, campus, search, limit
+    let { year, code, prefix, ucore, minCredits, maxCredits, term, campus, search, limit } = req.query;
+    if (!year) {
+      // pick latest year if none provided
+      const y = await dbGet('SELECT year FROM catalog_years ORDER BY year DESC LIMIT 1');
+      year = y ? y.year : null;
+    }
+    if (!year) return res.status(400).json({ error: 'year query parameter is required or no catalog years available' });
+
+    const where = ['catalog_year = ?'];
+    const params = [year];
+
+    if (code) {
+      where.push('code = ?');
+      params.push(code);
+    }
+    if (prefix) {
+      where.push('LOWER(prefix) = LOWER(?)');
+      params.push(prefix);
+    }
+    if (ucore) {
+      // match token in ucore column (stored as comma-separated or single token)
+      where.push("LOWER(ucore) LIKE LOWER(?)");
+      params.push(`%${ucore}%`);
+    }
+    if (minCredits) {
+      where.push('credits >= ?');
+      params.push(parseFloat(minCredits));
+    }
+    if (maxCredits) {
+      where.push('credits <= ?');
+      params.push(parseFloat(maxCredits));
+    }
+    if (term) {
+      // offered_terms stored as JSON/text; do a LIKE match for the term token
+      where.push('LOWER(offered_terms) LIKE LOWER(?)');
+      params.push(`%${term}%`);
+    }
+    if (search) {
+      where.push('(LOWER(title) LIKE LOWER(?) OR LOWER(description) LIKE LOWER(?) OR LOWER(code) LIKE LOWER(?))');
+      params.push(`%${search}%`, `%${search}%`, `%${search}%`);
+    }
+
+    const limitNum = parseInt(limit, 10) || 100;
+
+    const query = `SELECT id, unique_id, code, prefix, number, title, description, credits, credits_phrase, ucore, prerequisite_raw, prerequisite_codes, offered_terms, footnotes, attributes
+      FROM catalog_courses WHERE ${where.join(' AND ')} ORDER BY prefix, number LIMIT ${limitNum}`;
+
+    const rows = await dbAll(query, params);
+
+    // For campus/availability info: query live courses table for matching prefix+courseNumber
+    const out = [];
+    for (const r of rows) {
+      const codeKey = r.code || `${r.prefix} ${r.number}`;
+      // find distinct campuses/terms where this course appears in live `courses` table
+      const availability = await dbAll(`
+        SELECT DISTINCT campus, term, year
+        FROM courses
+        WHERE LOWER(prefix) = LOWER(?) AND courseNumber = ?
+        ORDER BY year DESC, term
+        LIMIT 10
+      `, [r.prefix || '', String(r.number || '')]);
+
+      out.push({
+        id: r.id,
+        unique_id: r.unique_id,
+        code: r.code || codeKey,
+        prefix: r.prefix,
+        number: r.number,
+        title: r.title,
+        description: r.description,
+        credits: r.credits,
+        credits_phrase: r.credits_phrase,
+        ucore: r.ucore,
+        prerequisite_raw: r.prerequisite_raw,
+        prerequisite_codes: r.prerequisite_codes ? JSON.parse(r.prerequisite_codes) : [],
+        offered_terms: r.offered_terms ? JSON.parse(r.offered_terms) : [],
+        footnotes: r.footnotes,
+        attributes: r.attributes,
+        availability // array of { campus, term, year }
+      });
+    }
+
+    res.json({ year, total: out.length, courses: out });
+  } catch (err) {
+    console.error('Error fetching catalog courses:', err);
+    res.status(500).json({ error: err.message });
   }
 });
 
