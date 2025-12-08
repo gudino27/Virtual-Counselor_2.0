@@ -1,5 +1,5 @@
 # Backend API Dockerfile
-FROM node:18-alpine
+FROM node:25-alpine
 
 # Install build dependencies for better-sqlite3
 RUN apk add --no-cache python3 make g++ sqlite
