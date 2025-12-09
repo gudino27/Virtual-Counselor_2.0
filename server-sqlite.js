@@ -20,7 +20,7 @@ const app = express();
 const PORT = process.env.API_PORT || 3008;
 const DATA_DIR = process.env.DATA_DIR || './data';
 const DB_PATH = path.join(DATA_DIR, 'courses.db');
-
+app.set('trust proxy', true); 
 // Middleware
 // Security: Lock down CORS to specific origins
 const allowedOrigins = process.env.NODE_ENV === 'production'
