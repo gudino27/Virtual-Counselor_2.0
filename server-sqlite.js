@@ -7,9 +7,12 @@ const path = require('path');
 const fs = require('fs');
 const { logger, httpLogger } = require('./logger');
 require('dotenv').config({ path: '.env.production' });
+const axios = require('axios');
 
 // Security: Validate required environment variables
 const WEBHOOK_SECRET = process.env.WEBHOOK_SECRET;
+      
+
 if (!WEBHOOK_SECRET) {
   logger.error('WEBHOOK_SECRET not set! Please set it in .env.production before starting.');
   logger.error('Generate one with: node -e "console.log(require(\'crypto\').randomBytes(32).toString(\'hex\'))"');
@@ -20,7 +23,18 @@ const app = express();
 const PORT = process.env.API_PORT || 3008;
 const DATA_DIR = process.env.DATA_DIR || './data';
 const DB_PATH = path.join(DATA_DIR, 'courses.db');
-app.set('trust proxy', true); 
+// Configure `trust proxy` from env to avoid permissive defaults.
+// By default we do NOT trust proxies (safer for rate-limiting).
+// Set `TRUST_PROXY` env to 'true', 'false', a number, or an address list when behind a reverse proxy.
+let trustProxyValue = false;
+if (process.env.TRUST_PROXY !== undefined) {
+  const v = process.env.TRUST_PROXY;
+  if (v === 'true') trustProxyValue = true;
+  else if (v === 'false') trustProxyValue = false;
+  else if (!Number.isNaN(Number(v))) trustProxyValue = Number(v);
+  else trustProxyValue = v; // allow string like 'loopback' or a comma-separated list
+}
+app.set('trust proxy', trustProxyValue);
 // Middleware
 // Security: Lock down CORS to specific origins
 const allowedOrigins = process.env.NODE_ENV === 'production'
@@ -944,6 +958,274 @@ app.get('/api/degree-requirements', async (req, res) => {
   } catch (error) {
     console.error('Error fetching degree requirements:', error);
     res.status(500).json({ error: error.message });
+  }
+});
+
+// ==============================
+// RateMyProfessors proxy endpoint
+// ==============================
+
+// Simple in-memory cache with TTL
+const rmpCache = new Map();
+function setRmpCache(key, value, ttlMs = 1000 * 60 * 10) { // default 10 minutes
+  const expires = Date.now() + ttlMs;
+  rmpCache.set(key, { value, expires });
+}
+function getRmpCache(key) {
+  const entry = rmpCache.get(key);
+  if (!entry) return null;
+  if (entry.expires < Date.now()) {
+    rmpCache.delete(key);
+    return null;
+  }
+  return entry.value;
+}
+
+const rmpLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute
+  max: parseInt(process.env.RMP_PROXY_RATE_LIMIT_MAX, 10) || 60,
+  message: { error: 'Too many RMP requests, please try again later' },
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+function sanitizeNameForKey(name = '') {
+  return (name || '').toString().trim().toLowerCase().replace(/[^a-z0-9\s\-]/g, '').slice(0, 120);
+}
+
+function buildRmpSearchPayload(name, schoolId) {
+  return {
+    operationName: 'SearchTeachers',
+    variables: { query: name, schoolID: schoolId || null },
+    query: `query SearchTeachers($query: String!, $schoolID: ID) { newSearch { teachers(query: $query, schoolID: $schoolID) { edges { node { legacyId firstName lastName avgRating avgDifficulty wouldTakeAgainPercent school { name id } } } } } }`
+  };
+}
+
+function buildRmpGetByIdPayload(id) {
+  return {
+    operationName: 'GetTeacherRatings',
+    variables: { id },
+    query: `query GetTeacherRatings($id: ID!) { node(id: $id) { ... on Teacher { legacyId firstName lastName avgRating avgDifficulty wouldTakeAgainPercent school { name id } } } }`
+  };
+}
+
+app.post('/api/rmp-proxy', rmpLimiter, async (req, res) => {
+  try {
+    if (process.env.ENABLE_RMP_PROXY === 'false') {
+      return res.status(403).json({ success: false, error: 'rmp-proxy-disabled' });
+    }
+
+    const { action, name, id, schoolId } = req.body || {};
+    if (!action || (action !== 'searchTeacher' && action !== 'getTeacherById')) {
+      return res.status(400).json({ success: false, error: 'invalid-action' });
+    }
+
+    if (action === 'searchTeacher') {
+      if (!name || typeof name !== 'string' || !name.trim()) {
+        return res.status(400).json({ success: false, error: 'missing-name' });
+      }
+      const key = `rmp:teacher:${sanitizeNameForKey(name)}`;
+      const cached = getRmpCache(key);
+      if (cached) return res.json({ success: true, source: 'cache', data: cached });
+
+      // Prefer using the maintained wrapper library on the server if available
+      let mapped = [];
+      try {
+        let mod = null;
+        try {
+          mod = require('@domattheshack/rate-my-professors');
+          mod = mod && mod.default ? mod.default : mod;
+        } catch (e) {
+          mod = null;
+        }
+
+        if (mod && (mod.searchTeacher || mod.searchTeachers || mod.search)) {
+          // If we can search by school, try to locate WSU first
+          let libSchoolId = null;
+          const searchSchool = mod.searchSchool || mod.searchSchools || mod.search;
+          if (typeof searchSchool === 'function') {
+            try {
+              const schools = await searchSchool('Washington State University');
+              if (Array.isArray(schools) && schools.length) {
+                const found = schools.find(s => (s.name && s.name.toLowerCase().includes('washington state')) || (s.state && String(s.state).toUpperCase() === 'WA')) || schools[0];
+                libSchoolId = found && (found.id || found.schoolId || found.legacyId) ? (found.id || found.schoolId || found.legacyId) : null;
+              }
+            } catch (e) {
+              libSchoolId = null;
+            }
+          }
+
+          const searchTeacher = mod.searchTeacher || mod.search || mod.searchForTeacher || mod.searchTeachers;
+          try {
+            if (libSchoolId) mapped = await searchTeacher(name, libSchoolId);
+            else mapped = await searchTeacher(name);
+          } catch (e) {
+            // try fallback without school
+            try {
+              mapped = await searchTeacher(name);
+            } catch (e2) {
+              mapped = [];
+            }
+          }
+
+          // Normalize mapped if it contains nodes
+          if (Array.isArray(mapped) && mapped.length && mapped[0] && mapped[0].node) {
+            mapped = mapped.map(e => e.node || e);
+          }
+        } else {
+          // library not available; fallback to GraphQL
+          const payload = buildRmpSearchPayload(name, schoolId);
+          const rmpResp = await axios.post('https://www.ratemyprofessors.com/graphql', payload, {
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': process.env.RMP_USER_AGENT || 'virtual-counselor/2.0 (+https://virtual-counselor.org)'
+            },
+            timeout: 10000
+          });
+          const edges = rmpResp?.data?.data?.newSearch?.teachers?.edges || [];
+          mapped = edges.map(e => e.node || {});
+        }
+      } catch (err) {
+        mapped = [];
+      }
+      // If no results, attempt a fallback search by last name only (improves hit rate)
+      if ((!mapped || mapped.length === 0) && name && name.trim().includes(' ')) {
+        const parts = name.trim().split(/\s+/);
+        const lastName = parts[parts.length - 1];
+        if (lastName && lastName.length > 1) {
+          // try using library fallback if available
+          try {
+            let mod = null;
+            try { mod = require('@domattheshack/rate-my-professors'); mod = mod && mod.default ? mod.default : mod; } catch (e) { mod = null; }
+            if (mod && (mod.searchTeacher || mod.search)) {
+              let lastResults = [];
+              try {
+                lastResults = await (mod.searchTeacher || mod.search)(lastName);
+                if (Array.isArray(lastResults) && lastResults[0] && lastResults[0].node) lastResults = lastResults.map(r => r.node || r);
+              } catch (e) {
+                lastResults = [];
+              }
+              if (lastResults && lastResults.length) mapped = lastResults;
+            } else {
+              const payload2 = buildRmpSearchPayload(lastName, schoolId);
+              try {
+                const rmpResp2 = await axios.post('https://www.ratemyprofessors.com/graphql', payload2, {
+                  headers: {
+                    'Content-Type': 'application/json',
+                    'User-Agent': process.env.RMP_USER_AGENT || 'virtual-counselor/2.0 (+https://virtual-counselor.org)'
+                  },
+                  timeout: 10000
+                });
+                const edges2 = rmpResp2?.data?.data?.newSearch?.teachers?.edges || [];
+                if (edges2 && edges2.length) mapped = edges2.map(e => e.node || {});
+              } catch (e) {
+                // ignore
+              }
+            }
+          } catch (e) {
+            // ignore fallback errors
+          }
+        }
+      }
+
+      // Normalize mapped items: ensure `legacyId` (string) and `profileUrl` are present when possible
+      try {
+        mapped = (Array.isArray(mapped) ? mapped : []).map(item => {
+          const out = Object.assign({}, item || {});
+          if (!out.legacyId && out.legacy_id) out.legacyId = out.legacy_id;
+          // some results use 'id' as base64 node id; try to decode numeric id
+          if (!out.legacyId && out.id && /^[A-Za-z0-9=+/]+$/.test(out.id)) {
+            try {
+              const decoded = Buffer.from(String(out.id), 'base64').toString('utf8');
+              const m = decoded.match(/(\d+)/);
+              if (m) out.legacyId = m[1];
+            } catch (e) {}
+          }
+          if (out.legacyId) out.legacyId = String(out.legacyId);
+          if (!out.profileUrl && out.legacyId) out.profileUrl = `https://www.ratemyprofessors.com/professor/${out.legacyId}`;
+          return out;
+        });
+      } catch (e) {
+        // If normalization fails for any reason, fall back to original mapped
+      }
+
+      setRmpCache(key, mapped);
+      return res.json({ success: true, source: 'rmp', data: mapped });
+    }
+
+    if (action === 'getTeacherById') {
+      if (!id) return res.status(400).json({ success: false, error: 'missing-id' });
+      // Accept numeric legacy id or node id; if numeric, convert to node id
+      let nodeId = id;
+      if (/^\d+$/.test(String(id))) {
+        try {
+          nodeId = Buffer.from(`Teacher-${String(id)}`).toString('base64');
+        } catch (e) {
+          nodeId = id;
+        }
+      }
+
+      const key = `rmp:id:${String(id)}`;
+      const cached = getRmpCache(key);
+      if (cached) return res.json({ success: true, source: 'cache', data: cached });
+
+      // Try using library if available
+      try {
+        let mod = null;
+        try { mod = require('@domattheshack/rate-my-professors'); mod = mod && mod.default ? mod.default : mod; } catch (e) { mod = null; }
+        let details = null;
+        if (mod && (mod.getTeacher || mod.getTeacherById || mod.get)) {
+          const getter = mod.getTeacher || mod.getTeacherById || mod.get;
+          try {
+            // library may expect numeric or node id; try both
+            details = await getter(id).catch(() => getter(nodeId));
+          } catch (e) {
+            details = null;
+          }
+        }
+
+        if (!details) {
+          const payload = buildRmpGetByIdPayload(nodeId);
+          const rmpResp = await axios.post('https://www.ratemyprofessors.com/graphql', payload, {
+            headers: {
+              'Content-Type': 'application/json',
+              'User-Agent': process.env.RMP_USER_AGENT || 'virtual-counselor/2.0 (+https://virtual-counselor.org)'
+            },
+            timeout: 10000
+          });
+          details = rmpResp?.data?.data?.node || null;
+        }
+
+        if (!details) {
+          setRmpCache(key, null);
+          return res.json({ success: true, source: 'rmp', data: null });
+        }
+
+        const mapped = {
+          legacyId: details.legacyId || details.legacy_id || null,
+          firstName: details.firstName || details.first_name || null,
+          lastName: details.lastName || details.last_name || null,
+          avgRating: details.avgRating !== undefined ? Number(details.avgRating) : (details.average ? Number(details.average) : null),
+          avgDifficulty: details.avgDifficulty !== undefined ? Number(details.avgDifficulty) : (details.difficulty ? Number(details.difficulty) : null),
+          wouldTakeAgainPercent: details.wouldTakeAgainPercent !== undefined ? Number(details.wouldTakeAgainPercent) : (details.wouldTakeAgain ? Number(details.wouldTakeAgain) : null),
+          school: details.school || null,
+          profileUrl: details.legacyId ? `https://www.ratemyprofessors.com/professor/${details.legacyId}` : (details.id ? (() => {
+            try { const dec = Buffer.from(details.id, 'base64').toString('utf8'); const m = dec.match(/(\d+)/); if (m) return `https://www.ratemyprofessors.com/professor/${m[1]}`; } catch (e) {} return null;
+          })() : null)
+        };
+
+        if (mapped.legacyId) mapped.legacyId = String(mapped.legacyId);
+        setRmpCache(key, mapped);
+        return res.json({ success: true, source: 'rmp', data: mapped });
+      } catch (err) {
+        console.error('RMP getById error:', err && err.message ? err.message : err);
+        return res.status(502).json({ success: false, error: 'upstream-unavailable' });
+      }
+    }
+
+  } catch (err) {
+    console.error('RMP proxy error:', err && err.message ? err.message : err);
+    return res.status(502).json({ success: false, error: 'upstream-unavailable' });
   }
 });
 
