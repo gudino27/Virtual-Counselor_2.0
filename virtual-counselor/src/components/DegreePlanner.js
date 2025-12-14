@@ -1,52 +1,81 @@
-import React, { useState, useEffect, useRef } from 'react';
-import toast from 'react-hot-toast';
-import ClassGradeCalculator from './ClassGradeCalculator';
-import ExcelJS from 'exceljs';
-import { fetchDegrees, fetchDegreeRequirements } from '../utils/api';
-import { detectElectiveKinds, buildElectiveFilter, computeUcoreSatisfaction } from '../utils/courseHelpers';
-import { saveUcoreCache, loadUcoreCache, saveDegreePlan, loadDegreePlan, clearAllData } from '../utils/storage';
-import { GRADE_POINTS } from './degree-planner/CourseRow';
-import YearSection from './degree-planner/YearSection';
-import OptimizeModal from './degree-planner/OptimizeModal';
-import GradeScaleModal from './degree-planner/GradeScaleModal';
-import CatalogModal from './degree-planner/CatalogModal';
-import DegreeSelector from './degree-planner/DegreeSelector';
+import React, { useState, useEffect, useRef } from "react";
+import toast from "react-hot-toast";
+import ClassGradeCalculator from "./ClassGradeCalculator";
+import ExcelJS from "exceljs";
+import { fetchDegrees, fetchDegreeRequirements } from "../utils/api";
+import {
+  detectElectiveKinds,
+  buildElectiveFilter,
+  computeUcoreSatisfaction,
+} from "../utils/courseHelpers";
+import {
+  saveUcoreCache,
+  loadUcoreCache,
+  saveDegreePlan,
+  loadDegreePlan,
+  clearAllData,
+} from "../utils/storage";
+import { GRADE_POINTS } from "./degree-planner/CourseRow";
+import YearSection from "./degree-planner/YearSection";
+import OptimizeModal from "./degree-planner/OptimizeModal";
+import GradeScaleModal from "./degree-planner/GradeScaleModal";
+import CatalogModal from "./degree-planner/CatalogModal";
+import DegreeSelector from "./degree-planner/DegreeSelector";
+import KeyboardShortcutsModal from "./KeyboardShortcutsModal";
+import CourseDestinationPicker from "./degree-planner/CourseDestinationPicker";
+import useHistory from "../hooks/useHistory";
 
 function DegreePlanner() {
   // State management
   const [catalogYears, setCatalogYears] = useState([]);
-  const [selectedYear, setSelectedYear] = useState('');
+  const [selectedYear, setSelectedYear] = useState("");
   const [degrees, setDegrees] = useState([]);
-  const [degreeSearch, setDegreeSearch] = useState('');
+  const [degreeSearch, setDegreeSearch] = useState("");
   const [showDegreeSuggestions, setShowDegreeSuggestions] = useState(false);
-  const [degreeSortBy, setDegreeSortBy] = useState('name-asc'); // 'name-asc', 'name-desc', 'type'
-  const [degreeFilterType, setDegreeFilterType] = useState('all'); // 'all', 'major', 'minor', 'certificate'
-  const [selectedPrograms, setSelectedPrograms] = useState({ majors: [], minors: [], certificates: [] });
+  const [degreeSortBy, setDegreeSortBy] = useState("name-asc"); // 'name-asc', 'name-desc', 'type'
+  const [degreeFilterType, setDegreeFilterType] = useState("all"); // 'all', 'major', 'minor', 'certificate'
+  const [selectedPrograms, setSelectedPrograms] = useState({
+    majors: [],
+    minors: [],
+    certificates: [],
+  });
   const [years, setYears] = useState([
-    { id: 1, name: 'Year 1' },
-    { id: 2, name: 'Year 2' },
-    { id: 3, name: 'Year 3' },
-    { id: 4, name: 'Year 4' }
+    { id: 1, name: "Year 1" },
+    { id: 2, name: "Year 2" },
+    { id: 3, name: "Year 3" },
+    { id: 4, name: "Year 4" },
   ]);
   const [activeYearTab, setActiveYearTab] = useState(1);
-  const [activeTermTab, setActiveTermTab] = useState('fall'); // 'fall', 'spring', 'summer'
-  
-  const [degreePlan, setDegreePlan] = useState({});
+  const [activeTermTab, setActiveTermTab] = useState("fall"); // 'fall', 'spring', 'summer'
+
+  // Use history hook for undo/redo functionality
+  const {
+    state: degreePlan,
+    setState: setDegreePlan,
+    undo,
+    redo,
+    canUndo,
+    canRedo,
+  } = useHistory({});
+
   const [showGradeScale, setShowGradeScale] = useState(false);
   const [showOptimizeModal, setShowOptimizeModal] = useState(false);
-  const [optimizeSpeed, setOptimizeSpeed] = useState('normal');
+  const [showKeyboardShortcuts, setShowKeyboardShortcuts] = useState(false);
+  const [showMoveModal, setShowMoveModal] = useState(false);
+  const [moveModalData, setMoveModalData] = useState({ course: null, fromYear: null, fromTerm: null });
+  const [optimizeSpeed, setOptimizeSpeed] = useState("normal");
   const degreeInputRef = useRef(null);
   const [showCatalogModal, setShowCatalogModal] = useState(false);
   const [showClassCalc, setShowClassCalc] = useState(false);
   const [classCalcCourseName, setClassCalcCourseName] = useState(null);
-  const [catalogSearch, setCatalogSearch] = useState('');
+  const [catalogSearch, setCatalogSearch] = useState("");
   const [catalogResults, setCatalogResults] = useState([]);
-  const [catalogModalYear, setCatalogModalYear] = useState('');
-  const [catalogModalTerm, setCatalogModalTerm] = useState('fall');
+  const [catalogModalYear, setCatalogModalYear] = useState("");
+  const [catalogModalTerm, setCatalogModalTerm] = useState("fall");
   const [catalogTarget, setCatalogTarget] = useState(null); // { courseId, yearId, term }
   const [catalogIndex, setCatalogIndex] = useState(0);
-  const [catalogViewMode, setCatalogViewMode] = useState('list'); // 'list' or 'carousel'
-  const [catalogClientSearch, setCatalogClientSearch] = useState('');
+  const [catalogViewMode, setCatalogViewMode] = useState("list"); // 'list' or 'carousel'
+  const [catalogClientSearch, setCatalogClientSearch] = useState("");
   const [catalogUcoreSelected, setCatalogUcoreSelected] = useState(null);
   const [catalogTargetCourse, setCatalogTargetCourse] = useState(null);
   const [ucoreRemainingCredits, setUcoreRemainingCredits] = useState(0);
@@ -69,7 +98,7 @@ function DegreePlanner() {
       setSelectedPrograms({
         majors: programs.majors || [],
         minors: programs.minors || [],
-        certificates: programs.certificates || []
+        certificates: programs.certificates || [],
       });
       setHydrated(true);
     } else {
@@ -80,11 +109,11 @@ function DegreePlanner() {
 
   const initializeEmptyPlan = () => {
     const plan = {};
-    years.forEach(year => {
+    years.forEach((year) => {
       plan[year.id] = {
         fall: { courses: [] },
         spring: { courses: [] },
-        summer: { courses: [] }
+        summer: { courses: [] },
       };
     });
     setDegreePlan(plan);
@@ -92,18 +121,36 @@ function DegreePlanner() {
 
   // Helper: Detect if course is UCORE Inquiry type
   const isUcoreInquiry = (course) => {
-    const name = (course.name || course.note || '').toLowerCase();
-    return name.includes('ucore') || name.includes('u-core') || name.includes('ucore inquiry');
+    const name = (course.name || course.note || "").toLowerCase();
+    return (
+      name.includes("ucore") ||
+      name.includes("u-core") ||
+      name.includes("ucore inquiry")
+    );
   };
 
   // Helper: Extract allowed UCORE categories from course footnotes
   const extractAllowedUcoreCategories = (course) => {
     const footnotes = Array.isArray(course.footnotes)
-      ? course.footnotes.join(' ')
-      : (course.footnotes || '');
+      ? course.footnotes.join(" ")
+      : course.footnotes || "";
     // All UCORE categories except CAPS
-    const allCategories = ['WRTG', 'QUAN', 'BSCI', 'PSCI', 'HUM', 'ARTS', 'DIVR', 'ROOT', 'COMM', 'EQJS', 'SSCI'];
-    const foundCategories = allCategories.filter(cat => footnotes.toUpperCase().includes(cat));
+    const allCategories = [
+      "WRTG",
+      "QUAN",
+      "BSCI",
+      "PSCI",
+      "HUM",
+      "ARTS",
+      "DIVR",
+      "ROOT",
+      "COMM",
+      "EQJS",
+      "SSCI",
+    ];
+    const foundCategories = allCategories.filter((cat) =>
+      footnotes.toUpperCase().includes(cat)
+    );
     // If no specific categories found in footnotes, return all categories for UCORE Inquiry courses
     return foundCategories.length > 0 ? foundCategories : allCategories;
   };
@@ -125,23 +172,35 @@ function DegreePlanner() {
     }
 
     // All UCORE categories except CAPS (which is fixed/predetermined)
-    const categories = ['WRTG', 'QUAN', 'BSCI', 'PSCI', 'HUM', 'ARTS', 'DIVR', 'ROOT', 'COMM', 'EQJS', 'SSCI'];
+    const categories = [
+      "WRTG",
+      "QUAN",
+      "BSCI",
+      "PSCI",
+      "HUM",
+      "ARTS",
+      "DIVR",
+      "ROOT",
+      "COMM",
+      "EQJS",
+      "SSCI",
+    ];
     const cache = {};
 
     try {
       // Fetch all categories in parallel
       const results = await Promise.all(
-        categories.map(cat =>
+        categories.map((cat) =>
           fetch(`/api/catalog/courses?year=${year}&ucore=${cat}&limit=200`)
-            .then(r => r.ok ? r.json() : { courses: [] })
+            .then((r) => (r.ok ? r.json() : { courses: [] }))
             .catch(() => ({ courses: [] }))
         )
       );
 
       categories.forEach((cat, i) => {
-        cache[cat] = (results[i].courses || []).map(c => ({
+        cache[cat] = (results[i].courses || []).map((c) => ({
           ...c,
-          _ucoreMatches: [cat]
+          _ucoreMatches: [cat],
         }));
       });
 
@@ -161,9 +220,13 @@ function DegreePlanner() {
     let remaining = ucoreRemainingCredits || 0;
     if (remaining <= 0) return;
 
-    const candidates = (filteredCatalogResults || []).filter(r => !r._disabledForFootnote).slice();
+    const candidates = (filteredCatalogResults || [])
+      .filter((r) => !r._disabledForFootnote)
+      .slice();
     // sort by credits desc
-    candidates.sort((a, b) => (Number(b.credits) || 3) - (Number(a.credits) || 3));
+    candidates.sort(
+      (a, b) => (Number(b.credits) || 3) - (Number(a.credits) || 3)
+    );
 
     const picks = [];
     for (const c of candidates) {
@@ -176,37 +239,56 @@ function DegreePlanner() {
     if (picks.length === 0) return;
 
     // Append picks to plan in a single update
-    setDegreePlan(prev => {
+    setDegreePlan((prev) => {
       const next = JSON.parse(JSON.stringify(prev || {}));
-      const destYear = (catalogTarget && catalogTarget.yearId) || (catalogTargetCourse && catalogTargetCourse.yearId) || activeYearTab;
-      const destTerm = (catalogTarget && catalogTarget.term) || 'fall';
-      if (!next[destYear]) next[destYear] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+      const destYear =
+        (catalogTarget && catalogTarget.yearId) ||
+        (catalogTargetCourse && catalogTargetCourse.yearId) ||
+        activeYearTab;
+      const destTerm = (catalogTarget && catalogTarget.term) || "fall";
+      if (!next[destYear])
+        next[destYear] = {
+          fall: { courses: [] },
+          spring: { courses: [] },
+          summer: { courses: [] },
+        };
       for (const pc of picks) {
         next[destYear][destTerm].courses.push({
           id: Date.now() + Math.random(),
-          name: `${pc.code || (pc.prefix + ' ' + pc.number)} - ${pc.title}`,
+          name: `${pc.code || pc.prefix + " " + pc.number} - ${pc.title}`,
           credits: pc.credits || 3,
-          grade: '',
-          status: 'planned',
-          prefix: pc.prefix || (pc.code ? pc.code.split(' ')[0] : ''),
-          number: pc.number || (pc.code ? pc.code.split(' ')[1] : ''),
+          grade: "",
+          status: "planned",
+          prefix: pc.prefix || (pc.code ? pc.code.split(" ")[0] : ""),
+          number: pc.number || (pc.code ? pc.code.split(" ")[1] : ""),
           footnotes: pc.footnotes || [],
           attributes: pc.attributes || [],
-          description: pc.description || '',
-          catalogCourseId: pc.id
+          description: pc.description || "",
+          catalogCourseId: pc.id,
         });
       }
       return next;
     });
 
     // mark selected in UI and clear modal
-    setCatalogResults(prev => (prev || []).map(r => {
-      const rc = String(r.code || `${r.prefix || ''} ${r.number || ''}`).toUpperCase().trim();
-      if (picks.find(p => String(p.code || `${p.prefix || ''} ${p.number || ''}`).toUpperCase().trim() === rc)) {
-        return { ...r, _disabledForFootnote: true, _selectedForUcore: true };
-      }
-      return r;
-    }));
+    setCatalogResults((prev) =>
+      (prev || []).map((r) => {
+        const rc = String(r.code || `${r.prefix || ""} ${r.number || ""}`)
+          .toUpperCase()
+          .trim();
+        if (
+          picks.find(
+            (p) =>
+              String(p.code || `${p.prefix || ""} ${p.number || ""}`)
+                .toUpperCase()
+                .trim() === rc
+          )
+        ) {
+          return { ...r, _disabledForFootnote: true, _selectedForUcore: true };
+        }
+        return r;
+      })
+    );
 
     setCatalogTarget(null);
     setCatalogTargetCourse(null);
@@ -221,14 +303,21 @@ function DegreePlanner() {
   useEffect(() => {
     try {
       if (!hydrated) {
-        console.debug('[DegreePlanner] skipping save until hydrated');
+        console.debug("[DegreePlanner] skipping save until hydrated");
         return;
       }
 
       saveDegreePlan({ plan: degreePlan, years, programs: selectedPrograms });
-      console.debug('[DegreePlanner] saved degree plan', Object.keys(degreePlan).length || 0, (selectedPrograms && ((selectedPrograms.majors||[]).length + (selectedPrograms.minors||[]).length + (selectedPrograms.certificates||[]).length)));
+      console.debug(
+        "[DegreePlanner] saved degree plan",
+        Object.keys(degreePlan).length || 0,
+        selectedPrograms &&
+          (selectedPrograms.majors || []).length +
+            (selectedPrograms.minors || []).length +
+            (selectedPrograms.certificates || []).length
+      );
     } catch (e) {
-      console.error('Failed saving degree plan:', e);
+      console.error("Failed saving degree plan:", e);
     }
   }, [degreePlan, years, selectedPrograms]);
 
@@ -236,7 +325,7 @@ function DegreePlanner() {
   useEffect(() => {
     loadDegrees();
   }, []);
-  
+
   useEffect(() => {
     if (selectedYear) {
       loadDegrees();
@@ -247,7 +336,7 @@ function DegreePlanner() {
     try {
       const data = await fetchDegrees(selectedYear);
       setDegrees(data.degrees || []);
-      
+
       // Set catalog years and default year if not set
       if (data.years && data.years.length > 0) {
         setCatalogYears(data.years);
@@ -256,7 +345,7 @@ function DegreePlanner() {
         }
       }
     } catch (error) {
-      console.error('Error loading degrees:', error);
+      console.error("Error loading degrees:", error);
     }
   };
 
@@ -271,11 +360,11 @@ function DegreePlanner() {
   const calculateGPA = () => {
     let totalPoints = 0;
     let totalCredits = 0;
-    
-    Object.values(degreePlan).forEach(year => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        year[term]?.courses.forEach(course => {
-          if (course.status === 'taken' && course.grade && course.credits > 0) {
+
+    Object.values(degreePlan).forEach((year) => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        year[term]?.courses.forEach((course) => {
+          if (course.status === "taken" && course.grade && course.credits > 0) {
             const points = (GRADE_POINTS[course.grade] || 0) * course.credits;
             totalPoints += points;
             totalCredits += course.credits;
@@ -283,16 +372,20 @@ function DegreePlanner() {
         });
       });
     });
-    
-    return totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : '0.00';
+
+    return totalCredits > 0 ? (totalPoints / totalCredits).toFixed(2) : "0.00";
   };
 
   const calculateCreditsAchieved = () => {
     let credits = 0;
-    Object.values(degreePlan).forEach(year => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        year[term]?.courses.forEach(course => {
-          if (course.status === 'taken' && course.grade && ['A', 'A-', 'B+', 'B', 'B-', 'C+', 'C', 'P'].includes(course.grade)) {
+    Object.values(degreePlan).forEach((year) => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        year[term]?.courses.forEach((course) => {
+          if (
+            course.status === "taken" &&
+            course.grade &&
+            ["A", "A-", "B+", "B", "B-", "C+", "C", "P"].includes(course.grade)
+          ) {
             credits += course.credits || 0;
           }
         });
@@ -303,9 +396,9 @@ function DegreePlanner() {
 
   const calculateCreditsPlanned = () => {
     let credits = 0;
-    Object.values(degreePlan).forEach(year => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        year[term]?.courses.forEach(course => {
+    Object.values(degreePlan).forEach((year) => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        year[term]?.courses.forEach((course) => {
           if (course.name && course.credits > 0) {
             credits += course.credits;
           }
@@ -325,16 +418,24 @@ function DegreePlanner() {
 
     const creditsFromProgram = (p) => {
       if (!p) return 0;
-      if (typeof p === 'number') return p;
+      if (typeof p === "number") return p;
       if (p.data) {
-        return p.data.totalHours || p.data.credits || p.data.creditsRequired || 0;
+        return (
+          p.data.totalHours || p.data.credits || p.data.creditsRequired || 0
+        );
       }
       return 0;
     };
 
-    majors.forEach(m => { total += creditsFromProgram(m) || 120; });
-    minors.forEach(m => { total += creditsFromProgram(m) || 18; });
-    certs.forEach(c => { total += creditsFromProgram(c) || 15; });
+    majors.forEach((m) => {
+      total += creditsFromProgram(m) || 120;
+    });
+    minors.forEach((m) => {
+      total += creditsFromProgram(m) || 18;
+    });
+    certs.forEach((c) => {
+      total += creditsFromProgram(c) || 15;
+    });
 
     // If nothing selected, don't default to 120 — return 0 so UI shows 'Not Started'
     if (majors.length + minors.length + certs.length === 0) return 0;
@@ -353,14 +454,14 @@ function DegreePlanner() {
   // Compute list of completed course codes for prerequisite checking
   const allCompletedCourses = React.useMemo(() => {
     const completed = [];
-    Object.values(degreePlan).forEach(year => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        year[term]?.courses.forEach(course => {
-          if (course.status === 'taken' && course.name) {
+    Object.values(degreePlan).forEach((year) => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        year[term]?.courses.forEach((course) => {
+          if (course.status === "taken" && course.name) {
             // Extract course code from name (e.g., "CPTS 121" or "CPTS 121 [QUAN]")
             const match = course.name.match(/^([A-Z]{2,6}\s*\d{3})/i);
             if (match) {
-              completed.push(match[1].toUpperCase().replace(/\s+/g, ' '));
+              completed.push(match[1].toUpperCase().replace(/\s+/g, " "));
             }
           }
         });
@@ -375,13 +476,13 @@ function DegreePlanner() {
     const duplicates = new Set();
 
     Object.entries(degreePlan).forEach(([, yearData]) => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        yearData[term]?.courses.forEach(course => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        yearData[term]?.courses.forEach((course) => {
           if (course.name) {
             // Extract course code
             const match = course.name.match(/^([A-Z]{2,6}\s*\d{3})/i);
             if (match) {
-              const code = match[1].toUpperCase().replace(/\s+/g, ' ');
+              const code = match[1].toUpperCase().replace(/\s+/g, " ");
               if (courseOccurrences[code]) {
                 duplicates.add(code);
               } else {
@@ -397,14 +498,17 @@ function DegreePlanner() {
   }, [degreePlan]);
 
   // Progress state: when no programs selected or creditsRequired === 0, show Not Started.
-  let progress = 'Not Started';
-  const programCount = (selectedPrograms.majors?.length || 0) + (selectedPrograms.minors?.length || 0) + (selectedPrograms.certificates?.length || 0);
+  let progress = "Not Started";
+  const programCount =
+    (selectedPrograms.majors?.length || 0) +
+    (selectedPrograms.minors?.length || 0) +
+    (selectedPrograms.certificates?.length || 0);
   if (programCount === 0 || creditsRequired === 0) {
-    progress = 'Not Started';
+    progress = "Not Started";
   } else if (creditsAchieved >= creditsRequired) {
-    progress = 'Completed';
+    progress = "Completed";
   } else {
-    progress = 'In Progress';
+    progress = "In Progress";
   }
 
   // Year management
@@ -413,25 +517,25 @@ function DegreePlanner() {
     const newYears = [...years, { id: newId, name: `Year ${newId}` }];
     setYears(newYears);
 
-    setDegreePlan(prev => ({
+    setDegreePlan((prev) => ({
       ...prev,
       [newId]: {
         fall: { courses: [] },
         spring: { courses: [] },
-        summer: { courses: [] }
-      }
+        summer: { courses: [] },
+      },
     }));
     toast.success(`Year ${newId} added`);
   };
 
   const handleDeleteYear = (yearId) => {
     if (years.length <= 1) {
-      toast.error('Cannot delete the only year');
+      toast.error("Cannot delete the only year");
       return;
     }
 
     const newYears = years
-      .filter(y => y.id !== yearId)
+      .filter((y) => y.id !== yearId)
       .map((y, idx) => ({ id: idx + 1, name: `Year ${idx + 1}` }));
 
     setYears(newYears);
@@ -454,78 +558,137 @@ function DegreePlanner() {
     toast.success(`Year ${yearId} deleted`);
   };
 
+  // Handle move course click
+  const handleMoveClick = (course, fromYear, fromTerm) => {
+    setMoveModalData({ course, fromYear, fromTerm });
+    setShowMoveModal(true);
+  };
+
+  // Handle course move
+  const handleMoveCourse = (course, fromYear, fromTerm, toYear, toTerm) => {
+    setDegreePlan(prev => {
+      const newPlan = JSON.parse(JSON.stringify(prev));
+
+      // Remove from source
+      if (newPlan[fromYear] && newPlan[fromYear][fromTerm]) {
+        newPlan[fromYear][fromTerm].courses = newPlan[fromYear][fromTerm].courses.filter(
+          c => c.id !== course.id
+        );
+      }
+
+      // Add to destination (ensure structure exists)
+      if (!newPlan[toYear]) {
+        newPlan[toYear] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+      }
+      if (!newPlan[toYear][toTerm]) {
+        newPlan[toYear][toTerm] = { courses: [] };
+      }
+
+      newPlan[toYear][toTerm].courses.push(course);
+
+      return newPlan;
+    });
+
+    const fromYearName = years.find(y => y.id === fromYear)?.name || `Year ${fromYear}`;
+    const toYearName = years.find(y => y.id === toYear)?.name || `Year ${toYear}`;
+    const fromTermLabel = fromTerm.charAt(0).toUpperCase() + fromTerm.slice(1);
+    const toTermLabel = toTerm.charAt(0).toUpperCase() + toTerm.slice(1);
+
+    toast.success(`Moved ${course.name || 'course'} from ${fromYearName} ${fromTermLabel} to ${toYearName} ${toTermLabel}`);
+  };
+
   // Add program
   const handleAddProgram = async (type, name) => {
     try {
       // Convert plural state key to singular for API call
-      const apiTypeMap = { 'majors': 'major', 'minors': 'minor', 'certificates': 'certificate' };
+      const apiTypeMap = {
+        majors: "major",
+        minors: "minor",
+        certificates: "certificate",
+      };
       const apiType = apiTypeMap[type] || type;
       const data = await fetchDegreeRequirements(name, null, apiType);
-      console.log('fetchDegreeRequirements result for', name, data);
-      
-      setSelectedPrograms(prev => ({
+      console.log("fetchDegreeRequirements result for", name, data);
+
+      setSelectedPrograms((prev) => ({
         ...prev,
-        [type]: [...(prev[type] || []), { name, data }]
+        [type]: [...(prev[type] || []), { name, data }],
       }));
 
       // Show success toast with program type label
-      const typeLabels = { 'majors': 'Major', 'minors': 'Minor', 'certificates': 'Certificate' };
-      toast.success(`${typeLabels[type] || 'Program'} "${name}" added`);
+      const typeLabels = {
+        majors: "Major",
+        minors: "Minor",
+        certificates: "Certificate",
+      };
+      toast.success(`${typeLabels[type] || "Program"} "${name}" added`);
 
       // Auto-populate courses
       if (data.schedule && Array.isArray(data.schedule)) {
-        const termMap = { 1: 'fall', 2: 'spring', 3: 'summer' };
+        const termMap = { 1: "fall", 2: "spring", 3: "summer" };
 
-        setDegreePlan(prev => {
+        setDegreePlan((prev) => {
           // start from latest state; if empty, initialize a blank plan from `years`
-          const base = (prev && Object.keys(prev).length)
-            ? JSON.parse(JSON.stringify(prev))
-            : (() => {
-                const p = {};
-                years.forEach(y => {
-                  p[y.id] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
-                });
-                return p;
-              })();
+          const base =
+            prev && Object.keys(prev).length
+              ? JSON.parse(JSON.stringify(prev))
+              : (() => {
+                  const p = {};
+                  years.forEach((y) => {
+                    p[y.id] = {
+                      fall: { courses: [] },
+                      spring: { courses: [] },
+                      summer: { courses: [] },
+                    };
+                  });
+                  return p;
+                })();
 
           // Clear existing empty slots in the target year before populating
           const newPlan = JSON.parse(JSON.stringify(prev));
-          data.schedule.forEach(semester => {
-             const yearId = parseInt(semester.year, 10);
-             const term = termMap[parseInt(semester.term, 10)];
-             
-             if (newPlan[yearId] && newPlan[yearId][term]) {
-                // remove any course with empty name (placeholder)
-                newPlan[yearId][term].courses = newPlan[yearId][term].courses.filter(c => c.name && c.name.trim() !== '');
-                // Also update the base reference so subsequent additions use the clean list
-                if (base[yearId] && base[yearId][term]) {
-                   base[yearId][term].courses = newPlan[yearId][term].courses;
-                }
-             }
+          data.schedule.forEach((semester) => {
+            const yearId = parseInt(semester.year, 10);
+            const term = termMap[parseInt(semester.term, 10)];
+
+            if (newPlan[yearId] && newPlan[yearId][term]) {
+              // remove any course with empty name (placeholder)
+              newPlan[yearId][term].courses = newPlan[yearId][
+                term
+              ].courses.filter((c) => c.name && c.name.trim() !== "");
+              // Also update the base reference so subsequent additions use the clean list
+              if (base[yearId] && base[yearId][term]) {
+                base[yearId][term].courses = newPlan[yearId][term].courses;
+              }
+            }
           });
 
           // Now populate
-          data.schedule.forEach(semester => {
+          data.schedule.forEach((semester) => {
             const yearId = parseInt(semester.year, 10);
-            const term = termMap[parseInt(semester.term, 10)];            
+            const term = termMap[parseInt(semester.term, 10)];
             if (!base[yearId]) {
-              base[yearId] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+              base[yearId] = {
+                fall: { courses: [] },
+                spring: { courses: [] },
+                summer: { courses: [] },
+              };
             }
 
             if (base[yearId] && base[yearId][term]) {
-              semester.courses.forEach(course => {
+              semester.courses.forEach((course) => {
                 if (course.isNonCredit) return;
                 base[yearId][term].courses.push({
                   id: Date.now() + Math.random(),
-                  name: course.raw || course.label || '',
+                  name: course.raw || course.label || "",
                   credits: course.credits || 0,
-                  grade: '',
-                  status: 'planned',
+                  grade: "",
+                  status: "planned",
                   footnotes: course.footnotes || [],
                   prefix: course.prefix,
                   number: course.number,
                   attributes: course.attributes || [],
-                  prerequisites: course.prerequisiteCodes || course.prerequisites || []
+                  prerequisites:
+                    course.prerequisiteCodes || course.prerequisites || [],
                 });
               });
             }
@@ -533,31 +696,31 @@ function DegreePlanner() {
 
           // Log counts per year/term before returning state
           try {
-            const counts = Object.keys(base).map(y => ({
+            const counts = Object.keys(base).map((y) => ({
               year: y,
               fall: (base[y].fall?.courses || []).length,
               spring: (base[y].spring?.courses || []).length,
-              summer: (base[y].summer?.courses || []).length
+              summer: (base[y].summer?.courses || []).length,
             }));
-            console.log('newPlan populated counts', counts);
+            console.log("newPlan populated counts", counts);
           } catch (e) {
-            console.log('Error computing newPlan counts', e);
+            console.log("Error computing newPlan counts", e);
           }
 
           return base;
         });
       }
     } catch (error) {
-      console.error('Error adding program:', error);
-      toast.error('Error loading program requirements');
+      console.error("Error adding program:", error);
+      toast.error("Error loading program requirements");
     }
   };
 
   // Remove a program (major, minor, or certificate)
   const handleRemoveProgram = (type, name) => {
-    setSelectedPrograms(prev => ({
+    setSelectedPrograms((prev) => ({
       ...prev,
-      [type]: prev[type].filter(p => p.name !== name)
+      [type]: prev[type].filter((p) => p.name !== name),
     }));
     toast.success(`Removed ${name}`);
   };
@@ -568,15 +731,26 @@ function DegreePlanner() {
     const unscheduled = [];
     const taken = new Set();
     Object.entries(degreePlan).forEach(([yearId, year]) => {
-      ['fall', 'spring', 'summer'].forEach(term => {
-        year[term].courses.forEach(course => {
+      ["fall", "spring", "summer"].forEach((term) => {
+        year[term].courses.forEach((course) => {
           if (course.name) {
             // normalize key to 'PREFIX ###' when possible
-            const normPrefix = course.prefix ? String(course.prefix).toUpperCase().replace(/\s+/g, '') : '';
-            const normNumber = course.number ? String(course.number) : '';
-            const key = (normPrefix && normNumber) ? `${normPrefix} ${normNumber}` : String(course.name || '').toUpperCase();
-            if (course.status === 'taken') taken.add(key);
-            else unscheduled.push({ ...course, key, originalYear: parseInt(yearId, 10), originalTerm: term });
+            const normPrefix = course.prefix
+              ? String(course.prefix).toUpperCase().replace(/\s+/g, "")
+              : "";
+            const normNumber = course.number ? String(course.number) : "";
+            const key =
+              normPrefix && normNumber
+                ? `${normPrefix} ${normNumber}`
+                : String(course.name || "").toUpperCase();
+            if (course.status === "taken") taken.add(key);
+            else
+              unscheduled.push({
+                ...course,
+                key,
+                originalYear: parseInt(yearId, 10),
+                originalTerm: term,
+              });
           }
         });
       });
@@ -586,28 +760,40 @@ function DegreePlanner() {
     const catalogMap = {};
     try {
       if (selectedYear) {
-        const resp = await fetch(`/api/catalog/courses?year=${encodeURIComponent(selectedYear)}`);
+        const resp = await fetch(
+          `/api/catalog/courses?year=${encodeURIComponent(selectedYear)}`
+        );
         if (resp.ok) {
           const j = await resp.json();
-          (j.courses || []).forEach(r => {
+          (j.courses || []).forEach((r) => {
             if (r.code) catalogMap[String(r.code).toUpperCase()] = r;
           });
         }
       }
     } catch (e) {
-      console.warn('Could not load catalog courses for optimizer', e);
+      console.warn("Could not load catalog courses for optimizer", e);
     }
 
     // Helper: parse prerequisite course codes from strings (footnotes, attributes, raw)
     // Returns array of groups; each group is an array of alternative codes (OR semantics).
     const parsePrereqs = (course) => {
       const sources = [];
-      if (course.footnotes) sources.push(Array.isArray(course.footnotes) ? course.footnotes.join(' ') : String(course.footnotes));
-      if (course.attributes) sources.push(Array.isArray(course.attributes) ? course.attributes.join(' ') : String(course.attributes));
+      if (course.footnotes)
+        sources.push(
+          Array.isArray(course.footnotes)
+            ? course.footnotes.join(" ")
+            : String(course.footnotes)
+        );
+      if (course.attributes)
+        sources.push(
+          Array.isArray(course.attributes)
+            ? course.attributes.join(" ")
+            : String(course.attributes)
+        );
       if (course.raw) sources.push(String(course.raw));
       if (course.name) sources.push(String(course.name));
 
-      const text = sources.join(' ');
+      const text = sources.join(" ");
       if (!text) return [];
 
       // Match either PREFIX NUMBER or standalone NUMBER; capture positions for grouping
@@ -616,12 +802,24 @@ function DegreePlanner() {
       let mm;
       while ((mm = tokenRe.exec(text)) !== null) {
         if (mm[1] && mm[2]) {
-          const pref = mm[1].toUpperCase().replace(/\s+/g, '');
+          const pref = mm[1].toUpperCase().replace(/\s+/g, "");
           const num = mm[2];
-          matches.push({ code: `${pref} ${num}`, start: mm.index, end: tokenRe.lastIndex, pref, num });
+          matches.push({
+            code: `${pref} ${num}`,
+            start: mm.index,
+            end: tokenRe.lastIndex,
+            pref,
+            num,
+          });
         } else if (mm[3]) {
           const num = mm[3];
-          matches.push({ code: `${num}`, start: mm.index, end: tokenRe.lastIndex, pref: null, num });
+          matches.push({
+            code: `${num}`,
+            start: mm.index,
+            end: tokenRe.lastIndex,
+            pref: null,
+            num,
+          });
         }
       }
 
@@ -631,7 +829,9 @@ function DegreePlanner() {
       for (let i = 0; i < matches.length; i++) {
         if (!matches[i].pref) {
           for (let j = i - 1; j >= 0; j--) {
-            const between = text.substring(matches[j].end, matches[i].start).toLowerCase();
+            const between = text
+              .substring(matches[j].end, matches[i].start)
+              .toLowerCase();
             if (between.length > 80) break;
             if (/\bor\b|[,;/]|\band\b/.test(between)) {
               matches[i].pref = matches[j].pref;
@@ -644,15 +844,17 @@ function DegreePlanner() {
 
       // Group adjacent matches into OR-groups when the connector contains 'or' or '/'
       const groups = [];
-      let current = [matches[0].code.replace(/\s+/g, ' ').toUpperCase()];
+      let current = [matches[0].code.replace(/\s+/g, " ").toUpperCase()];
       for (let i = 1; i < matches.length; i++) {
-        const between = text.substring(matches[i - 1].end, matches[i].start).toLowerCase();
+        const between = text
+          .substring(matches[i - 1].end, matches[i].start)
+          .toLowerCase();
         const hasOr = /\bor\b|\//.test(between);
         if (hasOr) {
-          current.push(matches[i].code.replace(/\s+/g, ' ').toUpperCase());
+          current.push(matches[i].code.replace(/\s+/g, " ").toUpperCase());
         } else {
           groups.push(Array.from(new Set(current)));
-          current = [matches[i].code.replace(/\s+/g, ' ').toUpperCase()];
+          current = [matches[i].code.replace(/\s+/g, " ").toUpperCase()];
         }
       }
       if (current.length) groups.push(Array.from(new Set(current)));
@@ -666,41 +868,71 @@ function DegreePlanner() {
         return course.offeredTerms.includes(termName);
       }
       // If course has an attribute/footnote indicating Summer only or not offered in summer
-      const attrs = (course.attributes || []).join(' ').toLowerCase();
-      const foot = (Array.isArray(course.footnotes) ? course.footnotes.join(' ') : (course.footnotes || '')).toLowerCase();
-      if (attrs.includes('not summer') || foot.includes('not offered summer') || attrs.includes('fall/spring')) return termName !== 'summer';
-      if (attrs.includes('summer only') || foot.includes('summer only')) return termName === 'summer';
+      const attrs = (course.attributes || []).join(" ").toLowerCase();
+      const foot = (
+        Array.isArray(course.footnotes)
+          ? course.footnotes.join(" ")
+          : course.footnotes || ""
+      ).toLowerCase();
+      if (
+        attrs.includes("not summer") ||
+        foot.includes("not offered summer") ||
+        attrs.includes("fall/spring")
+      )
+        return termName !== "summer";
+      if (attrs.includes("summer only") || foot.includes("summer only"))
+        return termName === "summer";
       // Default: allow term but prefer non-summer. We'll deprioritize summer by scheduling others first.
       return true;
     };
 
     // Build lookup map for quick access
     const courseMap = {};
-    unscheduled.forEach(c => {
+    unscheduled.forEach((c) => {
       courseMap[c.key] = c;
     });
 
     // Build prereq graph and prerequisites list for each course
     // Each entry is an array of groups; each group is an array of alternative codes (OR semantics)
     const prereqs = {};
-    unscheduled.forEach(c => {
+    unscheduled.forEach((c) => {
       let groups = parsePrereqs(c) || [];
-      const normKey = String(c.key || '').toUpperCase();
+      const normKey = String(c.key || "").toUpperCase();
       // If catalog has metadata for this course, apply offered terms and use its prereqs as fallback
       if (catalogMap[normKey]) {
         const meta = catalogMap[normKey];
         // apply offered terms if missing on the course object
-        if ((!c.offeredTerms || !c.offeredTerms.length) && meta.offered_terms && meta.offered_terms.length) {
+        if (
+          (!c.offeredTerms || !c.offeredTerms.length) &&
+          meta.offered_terms &&
+          meta.offered_terms.length
+        ) {
           c.offeredTerms = meta.offered_terms;
         }
         // if parser didn't find anything, use catalog prereqs
-        if ((groups.length === 0 || groups.every(g => g.length === 0)) && meta.prerequisite_codes && meta.prerequisite_codes.length) {
-          groups = meta.prerequisite_codes.map(pc => [String(pc).toUpperCase()]);
+        if (
+          (groups.length === 0 || groups.every((g) => g.length === 0)) &&
+          meta.prerequisite_codes &&
+          meta.prerequisite_codes.length
+        ) {
+          groups = meta.prerequisite_codes.map((pc) => [
+            String(pc).toUpperCase(),
+          ]);
         }
       }
 
       // Canonicalize groups: uppercase, single-spaced, remove empties
-      const cleanedGroups = groups.map(g => (Array.isArray(g) ? g : [g]).map(code => String(code || '').replace(/\s+/g, ' ').toUpperCase()).filter(Boolean)).filter(g => g.length > 0);
+      const cleanedGroups = groups
+        .map((g) =>
+          (Array.isArray(g) ? g : [g])
+            .map((code) =>
+              String(code || "")
+                .replace(/\s+/g, " ")
+                .toUpperCase()
+            )
+            .filter(Boolean)
+        )
+        .filter((g) => g.length > 0);
       prereqs[c.key] = cleanedGroups;
     });
 
@@ -718,10 +950,10 @@ function DegreePlanner() {
 
     // Helper: derive student level from credits
     const studentLevelFromCredits = (credits) => {
-      if (credits >= 90) return 'senior';
-      if (credits >= 60) return 'junior';
-      if (credits >= 30) return 'sophomore';
-      return 'freshman';
+      if (credits >= 90) return "senior";
+      if (credits >= 60) return "junior";
+      if (credits >= 30) return "sophomore";
+      return "freshman";
     };
 
     // Scheduling parameters
@@ -730,8 +962,12 @@ function DegreePlanner() {
 
     // Prepare empty newPlan
     const newPlan = {};
-    years.forEach(y => {
-      newPlan[y.id] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+    years.forEach((y) => {
+      newPlan[y.id] = {
+        fall: { courses: [] },
+        spring: { courses: [] },
+        summer: { courses: [] },
+      };
     });
 
     // Maintain set of scheduled courses
@@ -742,7 +978,11 @@ function DegreePlanner() {
       const groups = prereqs[course.key] || [];
       // Special handling for alternative course groups: if the course has `alternatives` defined,
       // be conservative: only allow moving earlier if NONE of the alternatives have explicit prereqs.
-      if (course.alternatives && Array.isArray(course.alternatives) && course.alternatives.length > 0) {
+      if (
+        course.alternatives &&
+        Array.isArray(course.alternatives) &&
+        course.alternatives.length > 0
+      ) {
         for (const alt of course.alternatives) {
           const altKey = String(alt).trim();
           const altPrereqs = prereqs[altKey] || [];
@@ -757,15 +997,26 @@ function DegreePlanner() {
       // Detect level requirement (junior/senior) from course meta/text
       const detectLevelRequirement = (courseObj) => {
         try {
-          const meta = catalogMap[String(courseObj.key || '').toUpperCase()] || {};
+          const meta =
+            catalogMap[String(courseObj.key || "").toUpperCase()] || {};
           const combined = [];
-          if (courseObj.footnotes) combined.push(Array.isArray(courseObj.footnotes) ? courseObj.footnotes.join(' ') : String(courseObj.footnotes));
-          if (courseObj.attributes) combined.push(Array.isArray(courseObj.attributes) ? courseObj.attributes.join(' ') : String(courseObj.attributes));
+          if (courseObj.footnotes)
+            combined.push(
+              Array.isArray(courseObj.footnotes)
+                ? courseObj.footnotes.join(" ")
+                : String(courseObj.footnotes)
+            );
+          if (courseObj.attributes)
+            combined.push(
+              Array.isArray(courseObj.attributes)
+                ? courseObj.attributes.join(" ")
+                : String(courseObj.attributes)
+            );
           if (courseObj.raw) combined.push(String(courseObj.raw));
           if (meta && meta.notes) combined.push(String(meta.notes));
-          const txt = combined.join(' ').toLowerCase();
-          if (/\bjunior\b/.test(txt)) return 'junior';
-          if (/\bsenior\b/.test(txt)) return 'senior';
+          const txt = combined.join(" ").toLowerCase();
+          if (/\bjunior\b/.test(txt)) return "junior";
+          if (/\bsenior\b/.test(txt)) return "senior";
           return null;
         } catch (e) {
           return null;
@@ -773,20 +1024,45 @@ function DegreePlanner() {
       };
 
       // credits the student would have before this slot
-      const creditsBefore = slot ? creditsBeforeSlot(slot) : (creditsAchieved || 0);
+      const creditsBefore = slot
+        ? creditsBeforeSlot(slot)
+        : creditsAchieved || 0;
       const levelBefore = studentLevelFromCredits(creditsBefore);
 
       const allowsConcurrent = (courseObj) => {
         try {
-          if (courseObj.concurrent === true || courseObj.allowConcurrent === true) return true;
-          const meta = catalogMap[String(courseObj.key || '').toUpperCase()];
-          if (meta && (meta.concurrent === true || meta.allow_concurrent === true)) return true;
+          if (
+            courseObj.concurrent === true ||
+            courseObj.allowConcurrent === true
+          )
+            return true;
+          const meta = catalogMap[String(courseObj.key || "").toUpperCase()];
+          if (
+            meta &&
+            (meta.concurrent === true || meta.allow_concurrent === true)
+          )
+            return true;
           const combined = [];
-          if (courseObj.footnotes) combined.push(Array.isArray(courseObj.footnotes) ? courseObj.footnotes.join(' ') : String(courseObj.footnotes));
-          if (courseObj.attributes) combined.push(Array.isArray(courseObj.attributes) ? courseObj.attributes.join(' ') : String(courseObj.attributes));
+          if (courseObj.footnotes)
+            combined.push(
+              Array.isArray(courseObj.footnotes)
+                ? courseObj.footnotes.join(" ")
+                : String(courseObj.footnotes)
+            );
+          if (courseObj.attributes)
+            combined.push(
+              Array.isArray(courseObj.attributes)
+                ? courseObj.attributes.join(" ")
+                : String(courseObj.attributes)
+            );
           if (courseObj.raw) combined.push(String(courseObj.raw));
-          const txt = combined.join(' ').toLowerCase();
-          if (/concurrent|may be taken concurrently|concurrent enrollment/.test(txt)) return true;
+          const txt = combined.join(" ").toLowerCase();
+          if (
+            /concurrent|may be taken concurrently|concurrent enrollment/.test(
+              txt
+            )
+          )
+            return true;
         } catch (e) {}
         return false;
       };
@@ -802,7 +1078,10 @@ function DegreePlanner() {
       for (const group of groups) {
         let satisfied = false;
         for (const code of group) {
-          if (scheduled.has(code)) { satisfied = true; break; }
+          if (scheduled.has(code)) {
+            satisfied = true;
+            break;
+          }
         }
         if (satisfied) continue;
         // not scheduled — allow only if concurrent allowed for this course
@@ -818,37 +1097,54 @@ function DegreePlanner() {
 
     // Flatten terms in chronological order
     const termSequence = [];
-    years.forEach(y => {
-      termSequence.push({ yearId: y.id, term: 'fall' });
-      termSequence.push({ yearId: y.id, term: 'spring' });
-      termSequence.push({ yearId: y.id, term: 'summer' });
+    years.forEach((y) => {
+      termSequence.push({ yearId: y.id, term: "fall" });
+      termSequence.push({ yearId: y.id, term: "spring" });
+      termSequence.push({ yearId: y.id, term: "summer" });
     });
 
     // Greedy placement: iterate through terms and try to place courses whose prereqs are satisfied and allowed in that term.
     // We will prefer non-summer terms first by ordering candidates.
-    const remaining = new Set(unscheduled.map(c => c.key));
+    const remaining = new Set(unscheduled.map((c) => c.key));
 
-    termSequence.forEach(slot => {
+    termSequence.forEach((slot) => {
       if (remaining.size === 0) return;
       const termCourses = newPlan[slot.yearId][slot.term].courses;
-      let currentCredits = termCourses.reduce((s, c) => s + (c.credits || 0), 0);
+      let currentCredits = termCourses.reduce(
+        (s, c) => s + (c.credits || 0),
+        0
+      );
 
       // Build candidate list: unscheduled courses allowed in this term and prereqs satisfied
-      const candidates = Array.from(remaining).map(k => courseMap[k]).filter(c => {
-        if (!c) return false;
-        if (!allowedInTerm(c, slot.term)) return false;
-        if (!prereqsSatisfied(c, slot)) return false;
-        return true;
-      });
+      const candidates = Array.from(remaining)
+        .map((k) => courseMap[k])
+        .filter((c) => {
+          if (!c) return false;
+          if (!allowedInTerm(c, slot.term)) return false;
+          if (!prereqsSatisfied(c, slot)) return false;
+          return true;
+        });
 
       // Sort candidates: prefer lower originalYear/originalTerm first, and prefer non-summer offerings
       candidates.sort((a, b) => {
-        if (a.originalYear !== b.originalYear) return a.originalYear - b.originalYear;
+        if (a.originalYear !== b.originalYear)
+          return a.originalYear - b.originalYear;
         const order = { fall: 1, spring: 2, summer: 3 };
-        if (order[a.originalTerm] !== order[b.originalTerm]) return order[a.originalTerm] - order[b.originalTerm];
+        if (order[a.originalTerm] !== order[b.originalTerm])
+          return order[a.originalTerm] - order[b.originalTerm];
         // deprioritize courses that appear to be summer-only when we're not in summer
-        const aSummerOnly = (a.offeredTerms && a.offeredTerms.length === 1 && a.offeredTerms[0] === 'summer') ? 1 : 0;
-        const bSummerOnly = (b.offeredTerms && b.offeredTerms.length === 1 && b.offeredTerms[0] === 'summer') ? 1 : 0;
+        const aSummerOnly =
+          a.offeredTerms &&
+          a.offeredTerms.length === 1 &&
+          a.offeredTerms[0] === "summer"
+            ? 1
+            : 0;
+        const bSummerOnly =
+          b.offeredTerms &&
+          b.offeredTerms.length === 1 &&
+          b.offeredTerms[0] === "summer"
+            ? 1
+            : 0;
         return aSummerOnly - bSummerOnly;
       });
 
@@ -857,15 +1153,19 @@ function DegreePlanner() {
           termCourses.push(c);
           scheduled.add(c.key);
           remaining.delete(c.key);
-          currentCredits += (c.credits || 0);
+          currentCredits += c.credits || 0;
         }
       }
     });
 
     // If anything remains (due to prereqs cycles or term restrictions), append them as fallback preserving original ordering
     if (remaining.size > 0) {
-      const fallback = unscheduled.filter(c => remaining.has(c.key));
-      fallback.sort((a, b) => (a.originalYear - b.originalYear) || (a.originalTerm.localeCompare(b.originalTerm)));
+      const fallback = unscheduled.filter((c) => remaining.has(c.key));
+      fallback.sort(
+        (a, b) =>
+          a.originalYear - b.originalYear ||
+          a.originalTerm.localeCompare(b.originalTerm)
+      );
       let idx = 0;
       const slots = termSequence;
       for (const c of fallback) {
@@ -873,8 +1173,14 @@ function DegreePlanner() {
         while (idx < slots.length) {
           const slot = slots[idx];
           const termCourses = newPlan[slot.yearId][slot.term].courses;
-          const currentCredits = termCourses.reduce((s, cc) => s + (cc.credits || 0), 0);
-          if (allowedInTerm(c, slot.term) && currentCredits + (c.credits || 0) <= maxCredits) {
+          const currentCredits = termCourses.reduce(
+            (s, cc) => s + (cc.credits || 0),
+            0
+          );
+          if (
+            allowedInTerm(c, slot.term) &&
+            currentCredits + (c.credits || 0) <= maxCredits
+          ) {
             termCourses.push(c);
             remaining.delete(c.key);
             break;
@@ -895,9 +1201,9 @@ function DegreePlanner() {
 
   // --- Catalog course picker (modal) ---
   const openCatalogModal = (initialYear) => {
-    setCatalogModalYear(initialYear || selectedYear || (catalogYears[0] || ''));
-    setCatalogModalTerm('fall');
-    setCatalogSearch('');
+    setCatalogModalYear(initialYear || selectedYear || catalogYears[0] || "");
+    setCatalogModalTerm("fall");
+    setCatalogSearch("");
     setCatalogResults([]);
     setCatalogTarget(null);
     setShowCatalogModal(true);
@@ -906,9 +1212,9 @@ function DegreePlanner() {
   const openCatalogForCourse = async (courseId, yearId, termName) => {
     const target = { courseId, yearId, term: termName };
     setCatalogTarget(target);
-    setCatalogModalYear(selectedYear || (catalogYears[0] || ''));
-    setCatalogModalTerm(termName || 'fall');
-    setCatalogSearch('');
+    setCatalogModalYear(selectedYear || catalogYears[0] || "");
+    setCatalogModalTerm(termName || "fall");
+    setCatalogSearch("");
     setCatalogResults([]);
     setShowCatalogModal(true);
 
@@ -917,7 +1223,7 @@ function DegreePlanner() {
     try {
       const findCourseById = (id) => {
         for (const y of Object.keys(degreePlan || {})) {
-          for (const t of ['fall', 'spring', 'summer']) {
+          for (const t of ["fall", "spring", "summer"]) {
             const list = degreePlan[y]?.[t]?.courses || [];
             for (const c of list) if (c.id === id) return c;
           }
@@ -934,7 +1240,12 @@ function DegreePlanner() {
         const deriveRequiredCredits = (co) => {
           if (!co) return 0;
           if (co.credits && Number(co.credits) > 0) return Number(co.credits);
-          const text = (Array.isArray(co.footnotes) ? co.footnotes.join(' ') : (co.footnotes || '')) || (co.name || '');
+          const text =
+            (Array.isArray(co.footnotes)
+              ? co.footnotes.join(" ")
+              : co.footnotes || "") ||
+            co.name ||
+            "";
           const m = String(text).match(/must complete\s*(\d+)\s*of/i);
           if (m && m[1]) return Number(m[1]) * 3;
           return 0;
@@ -951,8 +1262,11 @@ function DegreePlanner() {
           // Try to use cached data first
           if (ucoreCacheLoaded && ucoreCourseCache) {
             // Filter cached courses to only include allowed categories
-            const relevantCourses = allowedCats.flatMap(cat =>
-              (ucoreCourseCache[cat] || []).map(c => ({ ...c, _ucoreMatches: [cat] }))
+            const relevantCourses = allowedCats.flatMap((cat) =>
+              (ucoreCourseCache[cat] || []).map((c) => ({
+                ...c,
+                _ucoreMatches: [cat],
+              }))
             );
 
             // Deduplicate by course code, merge _ucoreMatches
@@ -961,7 +1275,9 @@ function DegreePlanner() {
               const key = c.code || `${c.prefix} ${c.number}`;
               if (courseMap.has(key)) {
                 const existing = courseMap.get(key);
-                existing._ucoreMatches = [...new Set([...existing._ucoreMatches, ...c._ucoreMatches])];
+                existing._ucoreMatches = [
+                  ...new Set([...existing._ucoreMatches, ...c._ucoreMatches]),
+                ];
               } else {
                 courseMap.set(key, { ...c });
               }
@@ -972,23 +1288,30 @@ function DegreePlanner() {
           }
 
           // Fallback: Fetch UCORE courses directly from API if cache not available
-          console.log('[DegreePlanner] UCORE cache not loaded, fetching directly for categories:', allowedCats);
+          console.log(
+            "[DegreePlanner] UCORE cache not loaded, fetching directly for categories:",
+            allowedCats
+          );
           try {
             const courseMap = new Map();
             const year = catalogModalYear || selectedYear;
             for (const cat of allowedCats) {
               const params = new URLSearchParams();
-              if (year) params.append('year', year);
-              params.append('ucore', cat);
-              params.append('limit', '200');
-              const resp = await fetch(`/api/catalog/courses?${params.toString()}`);
+              if (year) params.append("year", year);
+              params.append("ucore", cat);
+              params.append("limit", "200");
+              const resp = await fetch(
+                `/api/catalog/courses?${params.toString()}`
+              );
               if (resp.ok) {
                 const data = await resp.json();
-                for (const c of (data.courses || [])) {
+                for (const c of data.courses || []) {
                   const key = c.code || `${c.prefix} ${c.number}`;
                   if (courseMap.has(key)) {
                     const existing = courseMap.get(key);
-                    existing._ucoreMatches = [...new Set([...(existing._ucoreMatches || []), cat])];
+                    existing._ucoreMatches = [
+                      ...new Set([...(existing._ucoreMatches || []), cat]),
+                    ];
                   } else {
                     courseMap.set(key, { ...c, _ucoreMatches: [cat] });
                   }
@@ -997,7 +1320,7 @@ function DegreePlanner() {
             }
             setCatalogResults(Array.from(courseMap.values()));
           } catch (e) {
-            console.error('[DegreePlanner] Error fetching UCORE courses:', e);
+            console.error("[DegreePlanner] Error fetching UCORE courses:", e);
             setCatalogResults([]);
           }
           return;
@@ -1007,14 +1330,34 @@ function DegreePlanner() {
         setAllowedUcoreCategories([]);
 
         // If the course looks like an elective placeholder, try to detect elective kinds
-        const electiveKinds = detectElectiveKinds(courseObj.name || courseObj.note || courseObj.footnotes || '');
+        const electiveKinds = detectElectiveKinds(
+          courseObj.name || courseObj.note || courseObj.footnotes || ""
+        );
         if (electiveKinds && electiveKinds.length > 0) {
           // Build a simple filter from the first detected elective kind
-          const ef = buildElectiveFilter(electiveKinds[0], Object.values(degreePlan || {}).flatMap(y => ['fall','spring','summer'].flatMap(t => (y[t]?.courses || []).map(c => c))));
-          fetchCatalogCandidates('', { fromElective: true, electiveFilter: ef, targetCourse: courseObj });
-        } else if (Array.isArray(courseObj.footnotes) ? courseObj.footnotes.length > 0 : !!courseObj.footnotes) {
+          const ef = buildElectiveFilter(
+            electiveKinds[0],
+            Object.values(degreePlan || {}).flatMap((y) =>
+              ["fall", "spring", "summer"].flatMap((t) =>
+                (y[t]?.courses || []).map((c) => c)
+              )
+            )
+          );
+          fetchCatalogCandidates("", {
+            fromElective: true,
+            electiveFilter: ef,
+            targetCourse: courseObj,
+          });
+        } else if (
+          Array.isArray(courseObj.footnotes)
+            ? courseObj.footnotes.length > 0
+            : !!courseObj.footnotes
+        ) {
           // fetch candidates derived from footnotes
-          fetchCatalogCandidates('', { fromFootnotes: true, targetCourse: courseObj });
+          fetchCatalogCandidates("", {
+            fromFootnotes: true,
+            targetCourse: courseObj,
+          });
         }
       }
     } catch (e) {
@@ -1035,29 +1378,42 @@ function DegreePlanner() {
 
         // Only consider the first sentence (up to the first period) — many footnotes list the
         // allowed courses in the first sentence. Then split that sentence on commas to get items.
-        const firstSentence = String(text).split('.')[0] || String(text);
-        const parts = String(firstSentence).split(',').map(p => p.trim()).filter(Boolean);
+        const firstSentence = String(text).split(".")[0] || String(text);
+        const parts = String(firstSentence)
+          .split(",")
+          .map((p) => p.trim())
+          .filter(Boolean);
         const tokens = [];
         let lastPrefix = null;
 
         for (const part of parts) {
           // capture bracketed attributes in this part (e.g., [PSCI], [BSCI])
           const attrs = [];
-          let partNoBrackets = part.replace(/\[([^\]]+)\]/g, (m, g1) => {
-            if (g1) attrs.push(String(g1).trim());
-            return ' ';
-          }).trim();
+          let partNoBrackets = part
+            .replace(/\[([^\]]+)\]/g, (m, g1) => {
+              if (g1) attrs.push(String(g1).trim());
+              return " ";
+            })
+            .trim();
 
           // split sub-items by 'and' or '/'
-          const subparts = partNoBrackets.split(/\band\b|\//i).map(s => s.trim()).filter(Boolean);
+          const subparts = partNoBrackets
+            .split(/\band\b|\//i)
+            .map((s) => s.trim())
+            .filter(Boolean);
           for (const sp of subparts) {
             // match prefix+number
             const prefNum = sp.match(/([A-Za-z]{2,12})\s*(\d{3}\w?)/i);
             if (prefNum) {
-              const pref = prefNum[1].toUpperCase().replace(/\s+/g, '');
+              const pref = prefNum[1].toUpperCase().replace(/\s+/g, "");
               const num = prefNum[2].toUpperCase();
               lastPrefix = pref;
-              tokens.push({ prefix: pref, number: num, code: `${pref} ${num}`, attrs: Array.from(attrs) });
+              tokens.push({
+                prefix: pref,
+                number: num,
+                code: `${pref} ${num}`,
+                attrs: Array.from(attrs),
+              });
               continue;
             }
 
@@ -1065,17 +1421,27 @@ function DegreePlanner() {
             const numOnly = sp.match(/^(\d{3}\w?)$/i);
             if (numOnly && lastPrefix) {
               const num = numOnly[1].toUpperCase();
-              tokens.push({ prefix: lastPrefix, number: num, code: `${lastPrefix} ${num}`, attrs: Array.from(attrs) });
+              tokens.push({
+                prefix: lastPrefix,
+                number: num,
+                code: `${lastPrefix} ${num}`,
+                attrs: Array.from(attrs),
+              });
               continue;
             }
 
             // fallback: try find any prefix+number inside
             const any = sp.match(/([A-Za-z]{2,12})\s*(\d{3}\w?)/i);
             if (any) {
-              const pref = any[1].toUpperCase().replace(/\s+/g, '');
+              const pref = any[1].toUpperCase().replace(/\s+/g, "");
               const num = any[2].toUpperCase();
               lastPrefix = pref;
-              tokens.push({ prefix: pref, number: num, code: `${pref} ${num}`, attrs: Array.from(attrs) });
+              tokens.push({
+                prefix: pref,
+                number: num,
+                code: `${pref} ${num}`,
+                attrs: Array.from(attrs),
+              });
               continue;
             }
             // otherwise ignore
@@ -1086,7 +1452,7 @@ function DegreePlanner() {
         const seen = new Set();
         const out = [];
         for (const t of tokens) {
-          const key = String(t.code || '').toUpperCase();
+          const key = String(t.code || "").toUpperCase();
           if (!seen.has(key)) {
             seen.add(key);
             out.push(t);
@@ -1100,15 +1466,21 @@ function DegreePlanner() {
         const ef = opts.electiveFilter;
 
         // Handle COURSELIST kind - fetch specific allowed courses
-        if (ef.kind === 'COURSELIST' && ef.allowedCourses && ef.allowedCourses.length > 0) {
+        if (
+          ef.kind === "COURSELIST" &&
+          ef.allowedCourses &&
+          ef.allowedCourses.length > 0
+        ) {
           const alreadySelected = new Set();
           for (const y of Object.keys(degreePlan || {})) {
-            for (const t of ['fall', 'spring', 'summer']) {
+            for (const t of ["fall", "spring", "summer"]) {
               const list = degreePlan[y]?.[t]?.courses || [];
               for (const c of list) {
                 if (!c) continue;
                 if (c.prefix && c.number) {
-                  alreadySelected.add(`${String(c.prefix).toUpperCase()} ${String(c.number)}`);
+                  alreadySelected.add(
+                    `${String(c.prefix).toUpperCase()} ${String(c.number)}`
+                  );
                 }
               }
             }
@@ -1122,47 +1494,69 @@ function DegreePlanner() {
             if (allowed.levelRange) {
               try {
                 const params = new URLSearchParams();
-                if (catalogModalYear) params.append('year', catalogModalYear);
-                params.append('prefix', allowed.prefix.replace(/\s+/g, ' '));
-                params.append('limit', 100);
-                const resp = await fetch(`/api/catalog/courses?${params.toString()}`);
+                if (catalogModalYear) params.append("year", catalogModalYear);
+                params.append("prefix", allowed.prefix.replace(/\s+/g, " "));
+                params.append("limit", 100);
+                const resp = await fetch(
+                  `/api/catalog/courses?${params.toString()}`
+                );
                 if (resp.ok) {
                   const data = await resp.json();
-                  for (const course of (data.courses || [])) {
+                  for (const course of data.courses || []) {
                     const num = parseInt(course.number, 10);
-                    if (num >= allowed.levelRange.min && num < allowed.levelRange.max + 100) {
-                      const code = `${course.prefix} ${course.number}`.toUpperCase();
+                    if (
+                      num >= allowed.levelRange.min &&
+                      num < allowed.levelRange.max + 100
+                    ) {
+                      const code =
+                        `${course.prefix} ${course.number}`.toUpperCase();
                       if (!seenCodes.has(code)) {
                         seenCodes.add(code);
-                        results.push({ ...course, _disabledForFootnote: alreadySelected.has(code) });
+                        results.push({
+                          ...course,
+                          _disabledForFootnote: alreadySelected.has(code),
+                        });
                       }
                     }
                   }
                 }
-              } catch (e) { /* ignore */ }
+              } catch (e) {
+                /* ignore */
+              }
             } else {
               // Specific course code
               try {
                 const params = new URLSearchParams();
-                if (catalogModalYear) params.append('year', catalogModalYear);
-                params.append('prefix', allowed.prefix.replace(/\s+/g, ' '));
-                params.append('search', allowed.number);
-                params.append('limit', 10);
-                const resp = await fetch(`/api/catalog/courses?${params.toString()}`);
+                if (catalogModalYear) params.append("year", catalogModalYear);
+                params.append("prefix", allowed.prefix.replace(/\s+/g, " "));
+                params.append("search", allowed.number);
+                params.append("limit", 10);
+                const resp = await fetch(
+                  `/api/catalog/courses?${params.toString()}`
+                );
                 if (resp.ok) {
                   const data = await resp.json();
-                  for (const course of (data.courses || [])) {
+                  for (const course of data.courses || []) {
                     const courseNum = String(course.number).toUpperCase();
-                    if (courseNum === allowed.number || courseNum.startsWith(allowed.number)) {
-                      const code = `${course.prefix} ${course.number}`.toUpperCase();
+                    if (
+                      courseNum === allowed.number ||
+                      courseNum.startsWith(allowed.number)
+                    ) {
+                      const code =
+                        `${course.prefix} ${course.number}`.toUpperCase();
                       if (!seenCodes.has(code)) {
                         seenCodes.add(code);
-                        results.push({ ...course, _disabledForFootnote: alreadySelected.has(code) });
+                        results.push({
+                          ...course,
+                          _disabledForFootnote: alreadySelected.has(code),
+                        });
                       }
                     }
                   }
                 }
-              } catch (e) { /* ignore */ }
+              } catch (e) {
+                /* ignore */
+              }
             }
           }
 
@@ -1171,71 +1565,118 @@ function DegreePlanner() {
         }
 
         const paramsE = new URLSearchParams();
-        if (catalogModalYear) paramsE.append('year', catalogModalYear);
+        if (catalogModalYear) paramsE.append("year", catalogModalYear);
         // build query by kind
-        if (ef.kind === 'UCORE' && ef.ucoreCategory) {
-          paramsE.append('ucore', ef.ucoreCategory);
-        } else if (ef.kind === 'PREFIX' && ef.prefixes && ef.prefixes.length > 0) {
+        if (ef.kind === "UCORE" && ef.ucoreCategory) {
+          paramsE.append("ucore", ef.ucoreCategory);
+        } else if (
+          ef.kind === "PREFIX" &&
+          ef.prefixes &&
+          ef.prefixes.length > 0
+        ) {
           // request by prefix; backend will return courses for that prefix
-          paramsE.append('prefix', ef.prefixes[0]);
+          paramsE.append("prefix", ef.prefixes[0]);
         } else {
           // general: no extra params; leave search blank to return many
         }
-        paramsE.append('limit', opts.limit || 200);
+        paramsE.append("limit", opts.limit || 200);
         try {
-          const respE = await fetch(`/api/catalog/courses?${paramsE.toString()}`);
-            if (respE.ok) {
+          const respE = await fetch(
+            `/api/catalog/courses?${paramsE.toString()}`
+          );
+          if (respE.ok) {
             const je = await respE.json();
 
             // Compute already selected codes to disable them
             const targetCourse = opts.targetCourse;
-            const targetFootnotes = targetCourse ? new Set(Array.isArray(targetCourse.footnotes) ? targetCourse.footnotes.map(String) : [String(targetCourse.footnotes || '')]) : new Set();
+            const targetFootnotes = targetCourse
+              ? new Set(
+                  Array.isArray(targetCourse.footnotes)
+                    ? targetCourse.footnotes.map(String)
+                    : [String(targetCourse.footnotes || "")]
+                )
+              : new Set();
             const alreadySelected = new Set();
             for (const y of Object.keys(degreePlan || {})) {
-              for (const t of ['fall', 'spring', 'summer']) {
+              for (const t of ["fall", "spring", "summer"]) {
                 const list = degreePlan[y]?.[t]?.courses || [];
                 for (const c of list) {
                   if (!c) continue;
-                  const fns = Array.isArray(c.footnotes) ? c.footnotes : (c.footnotes ? [c.footnotes] : []);
+                  const fns = Array.isArray(c.footnotes)
+                    ? c.footnotes
+                    : c.footnotes
+                    ? [c.footnotes]
+                    : [];
                   for (const fn of fns) {
                     if (fn && targetFootnotes.has(fn)) {
-                      if (c.prefix && c.number) alreadySelected.add(`${String(c.prefix).toUpperCase()} ${String(c.number)}`);
+                      if (c.prefix && c.number)
+                        alreadySelected.add(
+                          `${String(c.prefix).toUpperCase()} ${String(
+                            c.number
+                          )}`
+                        );
                     }
                   }
                   // Also check if the course itself matches
                   if (c.prefix && c.number) {
-                    const cCode = `${String(c.prefix).toUpperCase()} ${String(c.number)}`;
+                    const cCode = `${String(c.prefix).toUpperCase()} ${String(
+                      c.number
+                    )}`;
                     if (c.catalogCourseId) alreadySelected.add(cCode);
                   }
                 }
               }
             }
 
-            let resultsE = (je.courses || []).filter(c => {
-              const code = String(c.code || `${c.prefix || ''} ${c.number || ''}`).toUpperCase();
-              return !(ef.excludeCodes || []).includes(code);
-            }).map(c => {
-              const code = String(c.code || `${c.prefix || ''} ${c.number || ''}`).toUpperCase().trim();
-              // mark whether this course satisfies the requested UCORE category (if applicable)
-              let satisfies = false;
-              try {
-                if (ef.kind === 'UCORE' && ef.ucoreCategory) {
-                  const need = String(ef.ucoreCategory || '').toUpperCase();
-                  const cU = String(c.ucore || '').toUpperCase();
-                  const cAttrs = (Array.isArray(c.attributes) ? c.attributes : []).map(a => String(a).toUpperCase());
-                  const cFoot = String(c.footnotes || '').toUpperCase();
-                  if ((cU && cU.includes(need)) || cAttrs.includes(need) || (cFoot && cFoot.includes(need))) satisfies = true;
-                }
-              } catch (e) {}
-              // Only disable if already selected, not by default
-              return { ...c, _disabledForFootnote: alreadySelected.has(code), _satisfiesUcore: satisfies };
-            });
+            let resultsE = (je.courses || [])
+              .filter((c) => {
+                const code = String(
+                  c.code || `${c.prefix || ""} ${c.number || ""}`
+                ).toUpperCase();
+                return !(ef.excludeCodes || []).includes(code);
+              })
+              .map((c) => {
+                const code = String(
+                  c.code || `${c.prefix || ""} ${c.number || ""}`
+                )
+                  .toUpperCase()
+                  .trim();
+                // mark whether this course satisfies the requested UCORE category (if applicable)
+                let satisfies = false;
+                try {
+                  if (ef.kind === "UCORE" && ef.ucoreCategory) {
+                    const need = String(ef.ucoreCategory || "").toUpperCase();
+                    const cU = String(c.ucore || "").toUpperCase();
+                    const cAttrs = (
+                      Array.isArray(c.attributes) ? c.attributes : []
+                    ).map((a) => String(a).toUpperCase());
+                    const cFoot = String(c.footnotes || "").toUpperCase();
+                    if (
+                      (cU && cU.includes(need)) ||
+                      cAttrs.includes(need) ||
+                      (cFoot && cFoot.includes(need))
+                    )
+                      satisfies = true;
+                  }
+                } catch (e) {}
+                // Only disable if already selected, not by default
+                return {
+                  ...c,
+                  _disabledForFootnote: alreadySelected.has(code),
+                  _satisfiesUcore: satisfies,
+                };
+              });
 
             // If UCORE kind, compute satisfaction for UI (store to state for later UI use)
-            if (ef.kind === 'UCORE') {
+            if (ef.kind === "UCORE") {
               try {
                 const required = [ef.ucoreCategory].filter(Boolean);
-                const planCourses = Object.values(degreePlan || {}).flatMap(y => ['fall','spring','summer'].flatMap(t => (y[t]?.courses || []).map(c => c)));
+                const planCourses = Object.values(degreePlan || {}).flatMap(
+                  (y) =>
+                    ["fall", "spring", "summer"].flatMap((t) =>
+                      (y[t]?.courses || []).map((c) => c)
+                    )
+                );
                 const sat = computeUcoreSatisfaction(required, planCourses);
                 // attach summary to first result for simple access in modal rendering
                 if (resultsE.length > 0) resultsE[0]._ucoreSummary = sat;
@@ -1253,44 +1694,81 @@ function DegreePlanner() {
       // If requested to load from footnotes, use provided targetCourse or catalogTarget to collect footnote codes
       if (opts.fromFootnotes && opts.targetCourse) {
         const targetCourse = opts.targetCourse;
-        const footnotesText = Array.isArray(targetCourse.footnotes) ? targetCourse.footnotes.join(' ') : (targetCourse.footnotes || '');
+        const footnotesText = Array.isArray(targetCourse.footnotes)
+          ? targetCourse.footnotes.join(" ")
+          : targetCourse.footnotes || "";
         const codes = extractCodesFromText(footnotesText);
         // Debug log: show what was extracted from footnotes
         try {
-          console.debug('[CatalogPicker] footnotesText:', footnotesText);
-          console.debug('[CatalogPicker] extracted tokens:', codes);
+          console.debug("[CatalogPicker] footnotesText:", footnotesText);
+          console.debug("[CatalogPicker] extracted tokens:", codes);
         } catch (e) {}
         if (codes.length === 0) {
           // Try to detect UCORE category lists in the footnote text (e.g., "Must complete 4 of these 5 UCORE designations: ARTS, DIVR, EQJS, HUM, SSCI.")
-          const firstSentence = String(footnotesText || '').split('.')[0] || String(footnotesText || '');
-          const ucoreListMatch = (firstSentence || footnotesText || '').match(/(?:U-?CORE|UCORE|U Core|designations)[:\s-]*([^\.]+)/i);
+          const firstSentence =
+            String(footnotesText || "").split(".")[0] ||
+            String(footnotesText || "");
+          const ucoreListMatch = (firstSentence || footnotesText || "").match(
+            /(?:U-?CORE|UCORE|U Core|designations)[:\s-]*([^\.]+)/i
+          );
           if (ucoreListMatch && ucoreListMatch[1]) {
             const raw = ucoreListMatch[1];
-            const cats = Array.from(new Set(raw.split(/[,;\/]| and |\band\b/gi).map(s => String(s || '').trim().toUpperCase()).filter(Boolean)));
+            const cats = Array.from(
+              new Set(
+                raw
+                  .split(/[,;\/]| and |\band\b/gi)
+                  .map((s) =>
+                    String(s || "")
+                      .trim()
+                      .toUpperCase()
+                  )
+                  .filter(Boolean)
+              )
+            );
             if (cats.length > 0) {
               // Aggregate results for each UCORE category
               const agg = [];
               const seenCodes = new Set();
               for (const catRaw of cats) {
-                const cat = String(catRaw || '').toUpperCase().trim();
+                const cat = String(catRaw || "")
+                  .toUpperCase()
+                  .trim();
                 try {
                   const p = new URLSearchParams();
-                  if (catalogModalYear) p.append('year', catalogModalYear);
-                  p.append('ucore', cat);
-                  p.append('limit', 200);
+                  if (catalogModalYear) p.append("year", catalogModalYear);
+                  p.append("ucore", cat);
+                  p.append("limit", 200);
                   const r = await fetch(`/api/catalog/courses?${p.toString()}`);
                   if (!r.ok) continue;
                   const jj = await r.json();
-                  for (const rc of (jj.courses || [])) {
-                    const rcCode = String(rc.code || `${rc.prefix || ''} ${rc.number || ''}`).toUpperCase().trim();
+                  for (const rc of jj.courses || []) {
+                    const rcCode = String(
+                      rc.code || `${rc.prefix || ""} ${rc.number || ""}`
+                    )
+                      .toUpperCase()
+                      .trim();
                     if (!seenCodes.has(rcCode)) {
                       seenCodes.add(rcCode);
                       agg.push({ ...rc, _ucoreMatches: [cat] });
                     } else {
                       // attach additional match info to existing agg entry
-                      const existing = agg.find(a => (String(a.code || `${a.prefix || ''} ${a.number || ''}`).toUpperCase().trim() === rcCode));
+                      const existing = agg.find(
+                        (a) =>
+                          String(
+                            a.code || `${a.prefix || ""} ${a.number || ""}`
+                          )
+                            .toUpperCase()
+                            .trim() === rcCode
+                      );
                       if (existing) {
-                        existing._ucoreMatches = Array.from(new Set([...(existing._ucoreMatches || []).map(x=>String(x).toUpperCase().trim()), cat]));
+                        existing._ucoreMatches = Array.from(
+                          new Set([
+                            ...(existing._ucoreMatches || []).map((x) =>
+                              String(x).toUpperCase().trim()
+                            ),
+                            cat,
+                          ])
+                        );
                       }
                     }
                   }
@@ -1300,20 +1778,36 @@ function DegreePlanner() {
               }
 
               // Compute alreadySelected codes for targetCourse's footnote group (reuse earlier logic)
-              const targetFootnotes = new Set(Array.isArray(targetCourse.footnotes) ? targetCourse.footnotes.map(String) : [String(targetCourse.footnotes || '')]);
+              const targetFootnotes = new Set(
+                Array.isArray(targetCourse.footnotes)
+                  ? targetCourse.footnotes.map(String)
+                  : [String(targetCourse.footnotes || "")]
+              );
               const alreadySelected = new Set();
               for (const y of Object.keys(degreePlan || {})) {
-                for (const t of ['fall', 'spring', 'summer']) {
+                for (const t of ["fall", "spring", "summer"]) {
                   const list = degreePlan[y]?.[t]?.courses || [];
                   for (const c of list) {
                     if (!c) continue;
-                    const fns = Array.isArray(c.footnotes) ? c.footnotes : (c.footnotes ? [c.footnotes] : []);
+                    const fns = Array.isArray(c.footnotes)
+                      ? c.footnotes
+                      : c.footnotes
+                      ? [c.footnotes]
+                      : [];
                     for (const fn of fns) {
                       if (fn && targetFootnotes.has(fn)) {
-                        if (c.prefix && c.number) alreadySelected.add(`${String(c.prefix).toUpperCase()} ${String(c.number)}`);
+                        if (c.prefix && c.number)
+                          alreadySelected.add(
+                            `${String(c.prefix).toUpperCase()} ${String(
+                              c.number
+                            )}`
+                          );
                         if (c.catalogCourseId && c.name) {
-                          const mc = extractCodesFromText(c.name || '');
-                          mc.forEach(m => { if (m && m.code) alreadySelected.add(String(m.code).toUpperCase()); });
+                          const mc = extractCodesFromText(c.name || "");
+                          mc.forEach((m) => {
+                            if (m && m.code)
+                              alreadySelected.add(String(m.code).toUpperCase());
+                          });
                         }
                       }
                     }
@@ -1322,12 +1816,29 @@ function DegreePlanner() {
               }
 
               // Annotate agg results with disabled flag and UCORE satisfaction
-              const planCourses = Object.values(degreePlan || {}).flatMap(y => ['fall','spring','summer'].flatMap(t => (y[t]?.courses || []).map(c => c)));
+              const planCourses = Object.values(degreePlan || {}).flatMap((y) =>
+                ["fall", "spring", "summer"].flatMap((t) =>
+                  (y[t]?.courses || []).map((c) => c)
+                )
+              );
               const sat = computeUcoreSatisfaction(cats, planCourses);
-              const final = agg.map(r => {
-                const code = String(r.code || `${r.prefix || ''} ${r.number || ''}`).toUpperCase().trim();
-                const matches = Array.isArray(r._ucoreMatches) ? r._ucoreMatches.map(m => String(m).toUpperCase().trim()) : [];
-                return { ...r, _disabledForFootnote: alreadySelected.has(code), _ucoreMatches: matches, _satisfiesUcore: matches.some(m => cats.map(x=>String(x).toUpperCase().trim()).includes(m)) };
+              const final = agg.map((r) => {
+                const code = String(
+                  r.code || `${r.prefix || ""} ${r.number || ""}`
+                )
+                  .toUpperCase()
+                  .trim();
+                const matches = Array.isArray(r._ucoreMatches)
+                  ? r._ucoreMatches.map((m) => String(m).toUpperCase().trim())
+                  : [];
+                return {
+                  ...r,
+                  _disabledForFootnote: alreadySelected.has(code),
+                  _ucoreMatches: matches,
+                  _satisfiesUcore: matches.some((m) =>
+                    cats.map((x) => String(x).toUpperCase().trim()).includes(m)
+                  ),
+                };
               });
               if (final.length > 0) final[0]._ucoreSummary = sat;
               setCatalogResults(final);
@@ -1342,69 +1853,100 @@ function DegreePlanner() {
         // Query the catalog for each extracted token and perform stricter filtering
         const resultsArr = [];
         for (const token of codes) {
-          const tokenPref = (token && token.prefix) ? token.prefix.toUpperCase() : null;
-          const tokenNum = (token && token.number) ? token.number.toUpperCase() : null;
-          const tokenCode = (token && token.code) ? token.code.toUpperCase() : null;
-          const tokenAttrs = (token && token.attrs) ? token.attrs.map(a => String(a).toUpperCase()) : [];
+          const tokenPref =
+            token && token.prefix ? token.prefix.toUpperCase() : null;
+          const tokenNum =
+            token && token.number ? token.number.toUpperCase() : null;
+          const tokenCode =
+            token && token.code ? token.code.toUpperCase() : null;
+          const tokenAttrs =
+            token && token.attrs
+              ? token.attrs.map((a) => String(a).toUpperCase())
+              : [];
 
           // Prefix alias map (local) — used for matching when footnote uses long names (PHYSICS)
           const PREFIX_ALIASES_LOCAL = {
-            'PHYSICS': ['PHYS','PHYSICS'],
-            'PHYS': ['PHYS','PHYSICS'],
-            'BIOLOGY': ['BIOL','BIOLOGY','BIO'],
-            'BIOL': ['BIOL','BIOLOGY','BIO'],
-            'CHEMISTRY': ['CHEM','CHEMISTRY'],
-            'CHEM': ['CHEM','CHEMISTRY']
+            PHYSICS: ["PHYS", "PHYSICS"],
+            PHYS: ["PHYS", "PHYSICS"],
+            BIOLOGY: ["BIOL", "BIOLOGY", "BIO"],
+            BIOL: ["BIOL", "BIOLOGY", "BIO"],
+            CHEMISTRY: ["CHEM", "CHEMISTRY"],
+            CHEM: ["CHEM", "CHEMISTRY"],
           };
-          const aliases = tokenPref ? (PREFIX_ALIASES_LOCAL[tokenPref] || [tokenPref]) : [];
+          const aliases = tokenPref
+            ? PREFIX_ALIASES_LOCAL[tokenPref] || [tokenPref]
+            : [];
           const canonicalPref = aliases.length > 0 ? aliases[0] : tokenPref;
 
           const params = new URLSearchParams();
-          if (catalogModalYear) params.append('year', catalogModalYear);
+          if (catalogModalYear) params.append("year", catalogModalYear);
           // Prefer exact prefix + number lookup (avoid relying on ucore).
           // Map long-form prefixes to canonical catalog prefixes when possible
           // (e.g., PHYSICS -> PHYS) so the server `prefix` param matches stored rows.
           const PREFIX_ALIASES = {
-            'PHYSICS': ['PHYS','PHYSICS'],
-            'PHYS': ['PHYS','PHYSICS'],
-            'BIOLOGY': ['BIOL','BIOLOGY','BIO'],
-            'BIOL': ['BIOL','BIOLOGY','BIO'],
-            'CHEMISTRY': ['CHEM','CHEMISTRY'],
-            'CHEM': ['CHEM','CHEMISTRY']
+            PHYSICS: ["PHYS", "PHYSICS"],
+            PHYS: ["PHYS", "PHYSICS"],
+            BIOLOGY: ["BIOL", "BIOLOGY", "BIO"],
+            BIOL: ["BIOL", "BIOLOGY", "BIO"],
+            CHEMISTRY: ["CHEM", "CHEMISTRY"],
+            CHEM: ["CHEM", "CHEMISTRY"],
           };
           if (tokenPref && tokenNum) {
-            const canonical = (PREFIX_ALIASES[tokenPref] && PREFIX_ALIASES[tokenPref][0]) ? PREFIX_ALIASES[tokenPref][0] : tokenPref;
-            params.append('prefix', canonical);
-            params.append('search', tokenNum);
+            const canonical =
+              PREFIX_ALIASES[tokenPref] && PREFIX_ALIASES[tokenPref][0]
+                ? PREFIX_ALIASES[tokenPref][0]
+                : tokenPref;
+            params.append("prefix", canonical);
+            params.append("search", tokenNum);
           } else if (tokenNum) {
-            params.append('search', tokenNum);
+            params.append("search", tokenNum);
           } else if (tokenCode) {
-            params.append('search', tokenCode);
+            params.append("search", tokenCode);
           }
           // Note: do NOT include tokenAttrs/ucore by default here — we want prefix+number
           // to succeed even when ucore is missing. The existing fallback will try
           // number+ucore later if attributes are present.
-          params.append('limit', opts.limit || 25);
+          params.append("limit", opts.limit || 25);
 
           try {
-            const resp = await fetch(`/api/catalog/courses?${params.toString()}`);
+            const resp = await fetch(
+              `/api/catalog/courses?${params.toString()}`
+            );
             if (resp.ok) {
               const j = await resp.json();
               // Debug: show server response size for this token
-              try { console.debug('[CatalogPicker] token query', { tokenCode, tokenPref, tokenNum, tokenAttrs, params: params.toString(), serverCount: (j.courses||[]).length }); } catch(e){}
+              try {
+                console.debug("[CatalogPicker] token query", {
+                  tokenCode,
+                  tokenPref,
+                  tokenNum,
+                  tokenAttrs,
+                  params: params.toString(),
+                  serverCount: (j.courses || []).length,
+                });
+              } catch (e) {}
               let matched = [];
               if (j.courses && j.courses.length > 0) {
                 // Strict filtering: require matching course number and either a fuzzy prefix match
                 // or an attribute match (e.g., PSCI/BSCI) when available.
                 for (const rc of j.courses) {
-                  const rcNum = String(rc.number || '').toUpperCase();
-                  const rcPref = String(rc.prefix || '').toUpperCase();
-                  const rcCode = String(rc.code || `${rcPref} ${rcNum}`).toUpperCase();
-                  const rcUcore = String(rc.ucore || '').toUpperCase();
-                  const rcAttrs = Array.isArray(rc.attributes) ? rc.attributes.map(a => String(a).toUpperCase()).join(' ') : String(rc.attributes || '').toUpperCase();
-                  const rcFoot = String(rc.footnotes || '').toUpperCase();
+                  const rcNum = String(rc.number || "").toUpperCase();
+                  const rcPref = String(rc.prefix || "").toUpperCase();
+                  const rcCode = String(
+                    rc.code || `${rcPref} ${rcNum}`
+                  ).toUpperCase();
+                  const rcUcore = String(rc.ucore || "").toUpperCase();
+                  const rcAttrs = Array.isArray(rc.attributes)
+                    ? rc.attributes
+                        .map((a) => String(a).toUpperCase())
+                        .join(" ")
+                    : String(rc.attributes || "").toUpperCase();
+                  const rcFoot = String(rc.footnotes || "").toUpperCase();
 
-                  const numberMatches = tokenNum ? (rcNum === tokenNum || (rcNum && rcNum.startsWith(tokenNum))) : true;
+                  const numberMatches = tokenNum
+                    ? rcNum === tokenNum ||
+                      (rcNum && rcNum.startsWith(tokenNum))
+                    : true;
 
                   // fuzzy prefix: compare first 4 letters when exact doesn't match
                   const fuzzy = (a, b) => {
@@ -1414,14 +1956,21 @@ function DegreePlanner() {
                     return la === lb;
                   };
 
-                  const prefixMatches = tokenPref ? (aliases.includes(rcPref)) : true;
+                  const prefixMatches = tokenPref
+                    ? aliases.includes(rcPref)
+                    : true;
 
                   // attribute match: if token includes an attr like PSCI, accept if rc.ucore/attributes/footnotes include it
                   let attrMatches = false;
                   if (tokenAttrs && tokenAttrs.length > 0) {
                     for (const ta of tokenAttrs) {
-                      if ((rcUcore && rcUcore.includes(ta)) || (rcAttrs && rcAttrs.includes(ta)) || (rcFoot && rcFoot.includes(ta))) {
-                        attrMatches = true; break;
+                      if (
+                        (rcUcore && rcUcore.includes(ta)) ||
+                        (rcAttrs && rcAttrs.includes(ta)) ||
+                        (rcFoot && rcFoot.includes(ta))
+                      ) {
+                        attrMatches = true;
+                        break;
                       }
                     }
                   }
@@ -1438,41 +1987,57 @@ function DegreePlanner() {
                 // try number + ucore (if attribute present)
                 if (tokenAttrs && tokenAttrs.length > 0) {
                   const fb = new URLSearchParams();
-                  if (catalogModalYear) fb.append('year', catalogModalYear);
-                  fb.append('search', tokenNum);
-                  fb.append('ucore', tokenAttrs[0]);
-                  fb.append('limit', opts.limit || 10);
+                  if (catalogModalYear) fb.append("year", catalogModalYear);
+                  fb.append("search", tokenNum);
+                  fb.append("ucore", tokenAttrs[0]);
+                  fb.append("limit", opts.limit || 10);
                   try {
-                    const r2 = await fetch(`/api/catalog/courses?${fb.toString()}`);
+                    const r2 = await fetch(
+                      `/api/catalog/courses?${fb.toString()}`
+                    );
                     if (r2.ok) {
                       const j2 = await r2.json();
-                      try { console.debug('[CatalogPicker] fallback number+ucore serverCount', tokenNum, tokenAttrs, (j2.courses||[]).length); } catch(e){}
+                      try {
+                        console.debug(
+                          "[CatalogPicker] fallback number+ucore serverCount",
+                          tokenNum,
+                          tokenAttrs,
+                          (j2.courses || []).length
+                        );
+                      } catch (e) {}
                       if (j2.courses && j2.courses.length > 0) {
                         for (const rc of j2.courses) {
-                          const rcNum = String(rc.number || '').toUpperCase();
-                          if (rcNum === tokenNum || rcNum.startsWith(tokenNum)) matched.push(rc);
+                          const rcNum = String(rc.number || "").toUpperCase();
+                          if (rcNum === tokenNum || rcNum.startsWith(tokenNum))
+                            matched.push(rc);
                         }
                       }
                     }
                   } catch (e) {}
                 }
-
-               
               }
 
               // If still no matches, try exact code match using prefix+number (avoid relying on ucore)
-                  if (matched.length === 0 && tokenPref && tokenNum) {
+              if (matched.length === 0 && tokenPref && tokenNum) {
                 try {
                   const codeParams = new URLSearchParams();
-                  if (catalogModalYear) codeParams.append('year', catalogModalYear);
+                  if (catalogModalYear)
+                    codeParams.append("year", catalogModalYear);
                   // server supports exact `code` lookup (e.g., "PHYS 202")
-                      // use canonical prefix (e.g., PHYS) for exact code lookup
-                      codeParams.append('code', `${canonicalPref} ${tokenNum}`);
-                  codeParams.append('limit', opts.limit || 25);
-                  const r3 = await fetch(`/api/catalog/courses?${codeParams.toString()}`);
+                  // use canonical prefix (e.g., PHYS) for exact code lookup
+                  codeParams.append("code", `${canonicalPref} ${tokenNum}`);
+                  codeParams.append("limit", opts.limit || 25);
+                  const r3 = await fetch(
+                    `/api/catalog/courses?${codeParams.toString()}`
+                  );
                   if (r3.ok) {
                     const j3 = await r3.json();
-                    try { console.debug('[CatalogPicker] exact code fallback', { code: `${tokenPref} ${tokenNum}`, serverCount: (j3.courses||[]).length }); } catch(e){}
+                    try {
+                      console.debug("[CatalogPicker] exact code fallback", {
+                        code: `${tokenPref} ${tokenNum}`,
+                        serverCount: (j3.courses || []).length,
+                      });
+                    } catch (e) {}
                     if (j3.courses && j3.courses.length > 0) {
                       // push exact matches
                       for (const rc of j3.courses) matched.push(rc);
@@ -1485,7 +2050,9 @@ function DegreePlanner() {
               let uniq = [];
               const seenCodes = new Set();
               for (const rc of matched) {
-                const rcCode = String(rc.code || `${rc.prefix || ''} ${rc.number || ''}`).toUpperCase();
+                const rcCode = String(
+                  rc.code || `${rc.prefix || ""} ${rc.number || ""}`
+                ).toUpperCase();
                 if (!seenCodes.has(rcCode)) {
                   seenCodes.add(rcCode);
                   uniq.push(rc);
@@ -1493,15 +2060,20 @@ function DegreePlanner() {
               }
 
               // If this was a fallback (we searched number-only) and tokenPref exists, narrow by stricter rules
-              if (uniq.length > 0 && tokenNum && tokenPref && (!tokenPref || tokenPref.length > 0)) {
+              if (
+                uniq.length > 0 &&
+                tokenNum &&
+                tokenPref &&
+                (!tokenPref || tokenPref.length > 0)
+              ) {
                 // Prefix alias whitelist to map long names to catalog abbreviations
                 const PREFIX_ALIASES = {
-                  'PHYSICS': ['PHYS', 'PHYSICS'],
-                  'PHYS': ['PHYS', 'PHYSICS'],
-                  'BIOLOGY': ['BIOL', 'BIOLOGY', 'BIO'],
-                  'BIOL': ['BIOL', 'BIOLOGY', 'BIO'],
-                  'CHEMISTRY': ['CHEM', 'CHEMISTRY'],
-                  'CHEM': ['CHEM', 'CHEMISTRY']
+                  PHYSICS: ["PHYS", "PHYSICS"],
+                  PHYS: ["PHYS", "PHYSICS"],
+                  BIOLOGY: ["BIOL", "BIOLOGY", "BIO"],
+                  BIOL: ["BIOL", "BIOLOGY", "BIO"],
+                  CHEMISTRY: ["CHEM", "CHEMISTRY"],
+                  CHEM: ["CHEM", "CHEMISTRY"],
                 };
 
                 const aliases = PREFIX_ALIASES[tokenPref] || [tokenPref];
@@ -1511,22 +2083,29 @@ function DegreePlanner() {
                 // filtering yields nothing, fall back to the earlier looser rules.
                 const STRICT_THRESHOLD = 1;
                 if (uniq.length > STRICT_THRESHOLD) {
-                  const strictFiltered = uniq.filter(rc => {
-                    const rcPref = String(rc.prefix || '').toUpperCase();
-                    const rcCode = String(rc.code || '').toUpperCase();
-                    const rcUcore = String(rc.ucore || '').toUpperCase();
-                    const rcFoot = String(rc.footnotes || '').toUpperCase();
+                  const strictFiltered = uniq.filter((rc) => {
+                    const rcPref = String(rc.prefix || "").toUpperCase();
+                    const rcCode = String(rc.code || "").toUpperCase();
+                    const rcUcore = String(rc.ucore || "").toUpperCase();
+                    const rcFoot = String(rc.footnotes || "").toUpperCase();
 
                     // Exact alias/prefix match
                     for (const a of aliases) {
                       if (rcPref === a) return true;
-                      if (rcCode.startsWith(a + ' ')) return true;
+                      if (rcCode.startsWith(a + " ")) return true;
                     }
 
                     // Attribute/ucore match when token provided attributes
                     if (tokenAttrs && tokenAttrs.length > 0) {
                       for (const ta of tokenAttrs) {
-                        if ((rcUcore && rcUcore.includes(ta)) || (rcFoot && rcFoot.includes(ta)) || (String(rc.attributes || '').toUpperCase().includes(ta))) return true;
+                        if (
+                          (rcUcore && rcUcore.includes(ta)) ||
+                          (rcFoot && rcFoot.includes(ta)) ||
+                          String(rc.attributes || "")
+                            .toUpperCase()
+                            .includes(ta)
+                        )
+                          return true;
                       }
                     }
 
@@ -1535,7 +2114,7 @@ function DegreePlanner() {
 
                   if (strictFiltered.length > 0) {
                     uniq = strictFiltered;
-                  } 
+                  }
                   // else {
                   //   // Looser fallback: keep the previous fuzzy/alias approach (first-3 letters or attr match)
                   //   const looseFiltered = uniq.filter(rc => {
@@ -1572,22 +2151,34 @@ function DegreePlanner() {
         }
 
         // Prevent selecting the same course twice for the same footnote group: collect selected catalog codes for other slots that share any footnote with targetCourse
-        const targetFootnotes = new Set(Array.isArray(targetCourse.footnotes) ? targetCourse.footnotes.map(String) : [String(targetCourse.footnotes || '')]);
+        const targetFootnotes = new Set(
+          Array.isArray(targetCourse.footnotes)
+            ? targetCourse.footnotes.map(String)
+            : [String(targetCourse.footnotes || "")]
+        );
         const alreadySelected = new Set();
         for (const y of Object.keys(degreePlan || {})) {
-          for (const t of ['fall', 'spring', 'summer']) {
+          for (const t of ["fall", "spring", "summer"]) {
             const list = degreePlan[y]?.[t]?.courses || [];
             for (const c of list) {
               if (!c) continue;
-              const fns = Array.isArray(c.footnotes) ? c.footnotes : (c.footnotes ? [c.footnotes] : []);
+              const fns = Array.isArray(c.footnotes)
+                ? c.footnotes
+                : c.footnotes
+                ? [c.footnotes]
+                : [];
               for (const fn of fns) {
                 if (fn && targetFootnotes.has(fn)) {
-                  if (c.prefix && c.number) alreadySelected.add(`${String(c.prefix).toUpperCase()} ${String(c.number)}`);
+                  if (c.prefix && c.number)
+                    alreadySelected.add(
+                      `${String(c.prefix).toUpperCase()} ${String(c.number)}`
+                    );
                   if (c.catalogCourseId && c.name) {
-                    const mc = extractCodesFromText(c.name || '');
+                    const mc = extractCodesFromText(c.name || "");
                     // mc is array of token objects; add their canonical code strings
-                    mc.forEach(m => {
-                      if (m && m.code) alreadySelected.add(String(m.code).toUpperCase());
+                    mc.forEach((m) => {
+                      if (m && m.code)
+                        alreadySelected.add(String(m.code).toUpperCase());
                     });
                   }
                 }
@@ -1598,20 +2189,40 @@ function DegreePlanner() {
 
         // Debug log: show raw candidate codes found for tokens
         try {
-          const candidateCodes = resultsArr.map(r => String(r.code || ((r.prefix && r.number) ? `${r.prefix} ${r.number}` : '')).toUpperCase());
-          console.debug('[CatalogPicker] candidateCodes (pre-unique/filtered):', candidateCodes);
-          console.debug('[CatalogPicker] alreadySelected codes:', Array.from(alreadySelected));
+          const candidateCodes = resultsArr.map((r) =>
+            String(
+              r.code || (r.prefix && r.number ? `${r.prefix} ${r.number}` : "")
+            ).toUpperCase()
+          );
+          console.debug(
+            "[CatalogPicker] candidateCodes (pre-unique/filtered):",
+            candidateCodes
+          );
+          console.debug(
+            "[CatalogPicker] alreadySelected codes:",
+            Array.from(alreadySelected)
+          );
         } catch (e) {}
 
         // Annotate results with disabled flag when code already selected
-        const results = resultsArr.map(c => {
-          const code = String(c.code || ((c.prefix && c.number) ? `${c.prefix} ${c.number}` : '')).toUpperCase();
+        const results = resultsArr.map((c) => {
+          const code = String(
+            c.code || (c.prefix && c.number ? `${c.prefix} ${c.number}` : "")
+          ).toUpperCase();
           return { ...c, _disabledForFootnote: alreadySelected.has(code) };
         });
         // Debug log: final results being shown in modal
         try {
-          console.debug('[CatalogPicker] final results count:', results.length);
-          console.debug('[CatalogPicker] final results codes:', results.map(r => String(r.code || ((r.prefix && r.number) ? `${r.prefix} ${r.number}` : '')).toUpperCase()));
+          console.debug("[CatalogPicker] final results count:", results.length);
+          console.debug(
+            "[CatalogPicker] final results codes:",
+            results.map((r) =>
+              String(
+                r.code ||
+                  (r.prefix && r.number ? `${r.prefix} ${r.number}` : "")
+              ).toUpperCase()
+            )
+          );
         } catch (e) {}
         setCatalogResults(results);
         return;
@@ -1619,74 +2230,95 @@ function DegreePlanner() {
 
       // Fallback: normal search behavior
       const params = new URLSearchParams();
-      if (catalogModalYear) params.append('year', catalogModalYear);
-      if (q) params.append('search', q);
-      if (opts.prefix) params.append('prefix', opts.prefix);
-      if (opts.ucore) params.append('ucore', opts.ucore);
-      params.append('limit', opts.limit || 100);
+      if (catalogModalYear) params.append("year", catalogModalYear);
+      if (q) params.append("search", q);
+      if (opts.prefix) params.append("prefix", opts.prefix);
+      if (opts.ucore) params.append("ucore", opts.ucore);
+      params.append("limit", opts.limit || 100);
 
       const resp = await fetch(`/api/catalog/courses?${params.toString()}`);
-      if (!resp.ok) throw new Error('Catalog request failed');
+      if (!resp.ok) throw new Error("Catalog request failed");
       const j = await resp.json();
       setCatalogResults(j.courses || []);
     } catch (e) {
-      console.error('Catalog search error', e);
+      console.error("Catalog search error", e);
       setCatalogResults([]);
     }
   };
 
   const addCatalogCourseToPlan = (course, targetYearId, targetTerm) => {
     // If catalogTarget is set, replace that specific course slot; otherwise append new course.
-    setDegreePlan(prev => {
+    setDegreePlan((prev) => {
       const next = JSON.parse(JSON.stringify(prev || {}));
       const destYear = (catalogTarget && catalogTarget.yearId) || targetYearId;
       const destTerm = (catalogTarget && catalogTarget.term) || targetTerm;
-      if (!next[destYear]) next[destYear] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+      if (!next[destYear])
+        next[destYear] = {
+          fall: { courses: [] },
+          spring: { courses: [] },
+          summer: { courses: [] },
+        };
 
       if (catalogTarget && catalogTarget.courseId) {
         // Replace matching courseId in the target slot
-        next[destYear][destTerm].courses = next[destYear][destTerm].courses.map(c => {
-          if (c.id === catalogTarget.courseId) {
-            return {
-              ...c,
-              name: `${course.code || (course.prefix + ' ' + course.number)} - ${course.title}`,
-              credits: course.credits || 0,
-              grade: '',
-              status: 'planned',
-              prefix: course.prefix || (course.code ? course.code.split(' ')[0] : ''),
-              number: course.number || (course.code ? course.code.split(' ')[1] : ''),
-              footnotes: course.footnotes || [],
-              attributes: course.attributes || [],
-              description: course.description || '',
-              catalogCourseId: course.id
-            };
+        next[destYear][destTerm].courses = next[destYear][destTerm].courses.map(
+          (c) => {
+            if (c.id === catalogTarget.courseId) {
+              return {
+                ...c,
+                name: `${
+                  course.code || course.prefix + " " + course.number
+                } - ${course.title}`,
+                credits: course.credits || 0,
+                grade: "",
+                status: "planned",
+                prefix:
+                  course.prefix ||
+                  (course.code ? course.code.split(" ")[0] : ""),
+                number:
+                  course.number ||
+                  (course.code ? course.code.split(" ")[1] : ""),
+                footnotes: course.footnotes || [],
+                attributes: course.attributes || [],
+                description: course.description || "",
+                catalogCourseId: course.id,
+              };
+            }
+            return c;
           }
-          return c;
-        });
+        );
       } else {
         next[destYear][destTerm].courses.push({
           id: Date.now() + Math.random(),
-          name: `${course.code || (course.prefix + ' ' + course.number)} - ${course.title}`,
+          name: `${course.code || course.prefix + " " + course.number} - ${
+            course.title
+          }`,
           credits: course.credits || 0,
-          grade: '',
-          status: 'planned',
-          prefix: course.prefix || (course.code ? course.code.split(' ')[0] : ''),
-          number: course.number || (course.code ? course.code.split(' ')[1] : ''),
+          grade: "",
+          status: "planned",
+          prefix:
+            course.prefix || (course.code ? course.code.split(" ")[0] : ""),
+          number:
+            course.number || (course.code ? course.code.split(" ")[1] : ""),
           footnotes: course.footnotes || [],
           attributes: course.attributes || [],
-          description: course.description || '',
-          catalogCourseId: course.id
+          description: course.description || "",
+          catalogCourseId: course.id,
         });
       }
 
       return next;
     });
     // If we're filling a UCORE aggregated placeholder, allow multi-add until required credits are satisfied
-    const code = String(course.code || `${course.prefix || ''} ${course.number || ''}`).toUpperCase().trim();
+    const code = String(
+      course.code || `${course.prefix || ""} ${course.number || ""}`
+    )
+      .toUpperCase()
+      .trim();
     const creditsAdded = Number(course.credits) || 3;
     if (catalogTargetCourse && ucoreRemainingCredits > 0) {
       // mark this code as selected
-      setCatalogSelectedCodes(prev => {
+      setCatalogSelectedCodes((prev) => {
         const next = new Set(prev || []);
         next.add(code);
         return next;
@@ -1694,18 +2326,27 @@ function DegreePlanner() {
 
       // decrement remaining credits and decide whether to close modal
       let shouldClose = false;
-      setUcoreRemainingCredits(prev => {
+      setUcoreRemainingCredits((prev) => {
         const next = Math.max(0, (prev || 0) - creditsAdded);
         if (next === 0) shouldClose = true;
         return next;
       });
 
       // disable this course in the results UI so user can't add again
-      setCatalogResults(prev => (prev || []).map(r => {
-        const rCode = String(r.code || `${r.prefix || ''} ${r.number || ''}`).toUpperCase().trim();
-        if (rCode === code) return { ...r, _disabledForFootnote: true, _selectedForUcore: true };
-        return r;
-      }));
+      setCatalogResults((prev) =>
+        (prev || []).map((r) => {
+          const rCode = String(r.code || `${r.prefix || ""} ${r.number || ""}`)
+            .toUpperCase()
+            .trim();
+          if (rCode === code)
+            return {
+              ...r,
+              _disabledForFootnote: true,
+              _selectedForUcore: true,
+            };
+          return r;
+        })
+      );
 
       // If requirement satisfied, clear target and close modal
       if (shouldClose) {
@@ -1740,19 +2381,19 @@ function DegreePlanner() {
   // Export to Excel (Matches user provided WSU Degree Plan image)
   const handleExport = async () => {
     const workbook = new ExcelJS.Workbook();
-    const sheetName = 'WSU Degree Plan';
+    const sheetName = "WSU Degree Plan";
     const worksheet = workbook.addWorksheet(sheetName);
     workbook.calcProperties.fullCalcOnLoad = true;
-    const terms = ['Fall', 'Spring', 'Summer'];
+    const terms = ["Fall", "Spring", "Summer"];
 
     // Define columns relative widths manually to avoid Row 1 conflicts
     // Columns A-D (Fall), E-H (Spring), I-L (Summer)
     // Indexes: 1,2,3,4 | 5,6,7,8 | 9,10,11,12
     const setColWidths = (startCol) => {
-        worksheet.getColumn(startCol).width = 45;   // Course
-        worksheet.getColumn(startCol+1).width = 14; // Credits
-        worksheet.getColumn(startCol+2).width = 15; // Grade
-        worksheet.getColumn(startCol+3).width = 10; // Points
+      worksheet.getColumn(startCol).width = 45; // Course
+      worksheet.getColumn(startCol + 1).width = 14; // Credits
+      worksheet.getColumn(startCol + 2).width = 15; // Grade
+      worksheet.getColumn(startCol + 3).width = 10; // Points
     };
     setColWidths(1); // Fall
     setColWidths(5); // Spring
@@ -1763,16 +2404,32 @@ function DegreePlanner() {
     worksheet.getColumn(14).width = 25;
     worksheet.getColumn(15).width = 15;
 
-    const getHeaderFill = () => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF981E32' } }); // WSU Crimson
-    const getHeaderFont = () => ({ bold: true, color: { argb: 'FFFFFFFF' }, name: 'Calibri', size: 12 });
-    const getTermHeaderFill = () => ({ type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD3D3D3' } }); // Light Grey matches image
-    const getTermHeaderFont = () => ({ bold: true, name: 'Calibri', size: 11 });
-    const getBorderStyle = () => ({ style: 'thin', color: { argb: 'FF000000' } }); // Standard black thin border
-    
+    const getHeaderFill = () => ({
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FF981E32" },
+    }); // WSU Crimson
+    const getHeaderFont = () => ({
+      bold: true,
+      color: { argb: "FFFFFFFF" },
+      name: "Calibri",
+      size: 12,
+    });
+    const getTermHeaderFill = () => ({
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFD3D3D3" },
+    }); // Light Grey matches image
+    const getTermHeaderFont = () => ({ bold: true, name: "Calibri", size: 11 });
+    const getBorderStyle = () => ({
+      style: "thin",
+      color: { argb: "FF000000" },
+    }); // Standard black thin border
+
     // Helper: convert column number to Excel letter
     const colToLetter = (col) => {
-      let temp = '';
-      let letter = '';
+      let temp = "";
+      let letter = "";
       while (col > 0) {
         temp = (col - 1) % 26;
         letter = String.fromCharCode(65 + temp) + letter;
@@ -1783,116 +2440,160 @@ function DegreePlanner() {
 
     // --- METADATA SIDEBAR SETUP ---
     const metaColStart = 13;
-    const setMeta = (row, label, val = '', isTotal = false) => {
+    const setMeta = (row, label, val = "", isTotal = false) => {
       const cellLabel = worksheet.getCell(row, metaColStart);
       cellLabel.value = label;
-      cellLabel.font = { bold: true, name: 'Calibri' };
+      cellLabel.font = { bold: true, name: "Calibri" };
       if (isTotal) {
-           cellLabel.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+        cellLabel.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFD9D9D9" },
+        };
       }
 
       if (val !== undefined && val !== null) {
         const cellVal = worksheet.getCell(row, metaColStart + 1);
         cellVal.value = val;
-        cellVal.font = { name: 'Calibri' };
+        cellVal.font = { name: "Calibri" };
         if (isTotal) {
-             cellVal.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFD9D9D9' } };
+          cellVal.fill = {
+            type: "pattern",
+            pattern: "solid",
+            fgColor: { argb: "FFD9D9D9" },
+          };
         }
       }
     };
-    
+
     // Sidebar: "WSU DEGREE PLAN" Header
     const sidebarTitle = worksheet.getCell(1, metaColStart);
-    sidebarTitle.value = 'WSU DEGREE PLAN';
-    sidebarTitle.font = { bold: true, color: { argb: 'FF981E32' }, size: 14, name: 'Calibri' };
-    
+    sidebarTitle.value = "WSU DEGREE PLAN";
+    sidebarTitle.font = {
+      bold: true,
+      color: { argb: "FF981E32" },
+      size: 14,
+      name: "Calibri",
+    };
+
     // Sidebar: Student Info
-    setMeta(3, 'STUDENT INFORMATION');
+    setMeta(3, "STUDENT INFORMATION");
     worksheet.getCell(3, metaColStart).font = { bold: true, underline: true };
-    
-    setMeta(4, 'Degree:', selectedPrograms?.majors?.[0]?.name || selectedPrograms?.minors?.[0]?.name || 'Custom');
-    setMeta(5, 'Catalog Year:', selectedYear || '');
-    setMeta(6, 'Required Credits:', calculateCreditsRequired() || 120);
-    
-    setMeta(8, 'Minors:');
-    const minorNames = (selectedPrograms?.minors || []).map(m => m.name).join(', ') || 'None selected';
+
+    setMeta(
+      4,
+      "Degree:",
+      selectedPrograms?.majors?.[0]?.name ||
+        selectedPrograms?.minors?.[0]?.name ||
+        "Custom"
+    );
+    setMeta(5, "Catalog Year:", selectedYear || "");
+    setMeta(6, "Required Credits:", calculateCreditsRequired() || 120);
+
+    setMeta(8, "Minors:");
+    const minorNames =
+      (selectedPrograms?.minors || []).map((m) => m.name).join(", ") ||
+      "None selected";
     setMeta(9, minorNames);
-    
-    setMeta(11, 'Exported:', new Date().toLocaleString());
 
-    setMeta(13, 'DEGREE PLAN SUMMARY');
-    worksheet.getCell(13, metaColStart).font = { bold: true, color: { argb: 'FF981E32' } };
+    setMeta(11, "Exported:", new Date().toLocaleString());
+
+    setMeta(13, "DEGREE PLAN SUMMARY");
+    worksheet.getCell(13, metaColStart).font = {
+      bold: true,
+      color: { argb: "FF981E32" },
+    };
 
     // Credit Summary Table
     // Credit Summary Table
-    setMeta(15, 'Credit Summary', 'Credits', true); // Header row styled grey
+    setMeta(15, "Credit Summary", "Credits", true); // Header row styled grey
 
     // FORMULAS:
     // Completed: Sum of credits where grade is NOT empty
-    const formulaCompleted = 'SUMIFS(B:B,C:C,"<>")+SUMIFS(F:F,G:G,"<>")+SUMIFS(J:J,K:K,"<>")';
+    const formulaCompleted =
+      'SUMIFS(B:B,C:C,"<>")+SUMIFS(F:F,G:G,"<>")+SUMIFS(J:J,K:K,"<>")';
     // Planned: Sum of credits where grade IS empty but Course Name is NOT empty
-    const formulaPlanned = 'SUMIFS(B:B,C:C,"",A:A,"<>")+SUMIFS(F:F,G:G,"",E:E,"<>")+SUMIFS(J:J,K:K,"",I:I,"<>")';
-    
+    const formulaPlanned =
+      'SUMIFS(B:B,C:C,"",A:A,"<>")+SUMIFS(F:F,G:G,"",E:E,"<>")+SUMIFS(J:J,K:K,"",I:I,"<>")';
+
     // N16 = Completed, N17 = Planned
     const cellCompleted = worksheet.getCell(16, metaColStart + 1);
     cellCompleted.value = { formula: formulaCompleted };
-    cellCompleted.font = { name: 'Calibri' };
+    cellCompleted.font = { name: "Calibri" };
 
     const cellPlanned = worksheet.getCell(17, metaColStart + 1);
     cellPlanned.value = { formula: formulaPlanned };
-    cellPlanned.font = { name: 'Calibri' };
+    cellPlanned.font = { name: "Calibri" };
 
     const cellTotal = worksheet.getCell(18, metaColStart + 1);
-    cellTotal.value = { formula: 'SUM(N16:N17)' }; // Total
-    cellTotal.font = { name: 'Calibri' };
+    cellTotal.value = { formula: "SUM(N16:N17)" }; // Total
+    cellTotal.font = { name: "Calibri" };
 
     const cellReq = worksheet.getCell(19, metaColStart + 1);
     cellReq.value = 120; // Fixed req
-    cellReq.font = { name: 'Calibri' };
+    cellReq.font = { name: "Calibri" };
 
-    setMeta(16, 'Completed Credits');
-    setMeta(17, 'Planned Credits');
-    setMeta(18, 'Total Credits'); 
-    setMeta(19, 'Credits to Graduate');
+    setMeta(16, "Completed Credits");
+    setMeta(17, "Planned Credits");
+    setMeta(18, "Total Credits");
+    setMeta(19, "Credits to Graduate");
 
     // GPA: Total Points / Completed Credits (Avoid DIV/0)
-    const formulaGPA = 'IF(N16=0,0,(SUM(D:D)+SUM(H:H)+SUM(L:L))/N16)';
-    setMeta(21, 'Cumulative GPA');
+    const formulaGPA = "IF(N16=0,0,(SUM(D:D)+SUM(H:H)+SUM(L:L))/N16)";
+    setMeta(21, "Cumulative GPA");
     const cellGPA = worksheet.getCell(21, metaColStart + 1);
     cellGPA.value = { formula: formulaGPA };
-    cellGPA.numFmt = '0.00';
-    cellGPA.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFFFF2CC' } }; // Light yellow
-    
+    cellGPA.numFmt = "0.00";
+    cellGPA.fill = {
+      type: "pattern",
+      pattern: "solid",
+      fgColor: { argb: "FFFFF2CC" },
+    }; // Light yellow
+
     // --- MAIN EXPORT LOOP ---
 
     let currentRow = 1;
 
-    years.forEach(year => {
+    years.forEach((year) => {
       // 1. Year Header
       const yearCell = worksheet.getCell(currentRow, 1);
       yearCell.value = year.name.toUpperCase();
       yearCell.fill = getHeaderFill();
       yearCell.font = getHeaderFont();
-      yearCell.alignment = { horizontal: 'center', vertical: 'middle' };
+      yearCell.alignment = { horizontal: "center", vertical: "middle" };
       const border = getBorderStyle();
-      yearCell.border = { top: border, bottom: border, left: border, right: border };
+      yearCell.border = {
+        top: border,
+        bottom: border,
+        left: border,
+        right: border,
+      };
       worksheet.mergeCells(currentRow, 1, currentRow, 12);
       currentRow++;
 
       // 2. Term Headers
       let colIdx = 1;
-      terms.forEach(t => {
-        const c1 = worksheet.getCell(currentRow, colIdx); c1.value = t.toUpperCase(); 
-        const c2 = worksheet.getCell(currentRow, colIdx + 1); c2.value = 'CREDITS';
-        const c3 = worksheet.getCell(currentRow, colIdx + 2); c3.value = 'GRADE';
-        const c4 = worksheet.getCell(currentRow, colIdx + 3); c4.value = 'POINTS';
+      terms.forEach((t) => {
+        const c1 = worksheet.getCell(currentRow, colIdx);
+        c1.value = t.toUpperCase();
+        const c2 = worksheet.getCell(currentRow, colIdx + 1);
+        c2.value = "CREDITS";
+        const c3 = worksheet.getCell(currentRow, colIdx + 2);
+        c3.value = "GRADE";
+        const c4 = worksheet.getCell(currentRow, colIdx + 3);
+        c4.value = "POINTS";
 
-        [c1, c2, c3, c4].forEach(cell => {
-           cell.fill = getTermHeaderFill();
-           cell.font = getTermHeaderFont();
-           cell.alignment = { horizontal: 'center', vertical: 'middle' };
-           const border = getBorderStyle();
-           cell.border = { top: border, bottom: border, left: border, right: border };
+        [c1, c2, c3, c4].forEach((cell) => {
+          cell.fill = getTermHeaderFill();
+          cell.font = getTermHeaderFont();
+          cell.alignment = { horizontal: "center", vertical: "middle" };
+          const border = getBorderStyle();
+          cell.border = {
+            top: border,
+            bottom: border,
+            left: border,
+            right: border,
+          };
         });
         colIdx += 4;
       });
@@ -1901,55 +2602,64 @@ function DegreePlanner() {
       // 3. Data Rows
       // Filter out null/undefined entries to prevent ghost rows
       const getCourses = (term) => {
-          const list = (degreePlan[year.id] && degreePlan[year.id][term] && degreePlan[year.id][term].courses) || [];
-          return list.filter(c => c && c.name); // only count real courses
+        const list =
+          (degreePlan[year.id] &&
+            degreePlan[year.id][term] &&
+            degreePlan[year.id][term].courses) ||
+          [];
+        return list.filter((c) => c && c.name); // only count real courses
       };
-      const fall = getCourses('fall');
-      const spring = getCourses('spring');
-      const summer = getCourses('summer');
-      
+      const fall = getCourses("fall");
+      const spring = getCourses("spring");
+      const summer = getCourses("summer");
+
       const rowsNeeded = Math.max(fall.length, spring.length, summer.length, 1);
 
       for (let i = 0; i < rowsNeeded; i++) {
-         const row = worksheet.getRow(currentRow);
-         row.height = 18;
-         
-         const writeTerm = (courseList, startCol) => {
-             const c = courseList[i];
-             if (c) {
-                 row.getCell(startCol).value = c.name || '';
-                 row.getCell(startCol+1).value = Number(c.credits) || 0;
-                 row.getCell(startCol+2).value = c.grade ? c.grade : null;
-             }
-         };
-         
-         writeTerm(fall, 1);
-         writeTerm(spring, 5);
-         writeTerm(summer, 9);
+        const row = worksheet.getRow(currentRow);
+        row.height = 18;
 
-         let cBase = 1;
-         for (let t = 0; t < 3; t++) {
-             // Borders
-             for(let k=0; k<4; k++) {
-                 const border = getBorderStyle();
-                 row.getCell(cBase+k).border = { top: border, bottom: border, left: border, right: border };
-             }
+        const writeTerm = (courseList, startCol) => {
+          const c = courseList[i];
+          if (c) {
+            row.getCell(startCol).value = c.name || "";
+            row.getCell(startCol + 1).value = Number(c.credits) || 0;
+            row.getCell(startCol + 2).value = c.grade ? c.grade : null;
+          }
+        };
 
-             const credAddr = `${colToLetter(cBase + 1)}${currentRow}`;
-             const gradeAddr = `${colToLetter(cBase + 2)}${currentRow}`;
-             
-             const ptsCell = row.getCell(cBase + 3);
-             // Use nested IFs instead of SWITCH for maximum compatibility (prevents 'Repaired Records' on older Excel)
-             // Grades: A=4, A-=3.7, B+=3.3, B=3, B-=2.7, C+=2.3, C=2, C-=1.7, D+=1.3, D=1, F=0
-             const gVal = `MID(${gradeAddr},1,2)`;
-             const formulaStr = `IF(${gVal}="A",4,IF(${gVal}="A-",3.7,IF(${gVal}="B+",3.3,IF(${gVal}="B",3,IF(${gVal}="B-",2.7,IF(${gVal}="C+",2.3,IF(${gVal}="C",2,IF(${gVal}="C-",1.7,IF(${gVal}="D+",1.3,IF(${gVal}="D",1,IF(${gVal}="F",0,0)))))))))))`;
-             
-             ptsCell.value = {
-                 formula: `IF(${gradeAddr}="","",IFERROR(${formulaStr}*${credAddr},0))`
-             };
-             cBase += 4;
-         }
-         currentRow++;
+        writeTerm(fall, 1);
+        writeTerm(spring, 5);
+        writeTerm(summer, 9);
+
+        let cBase = 1;
+        for (let t = 0; t < 3; t++) {
+          // Borders
+          for (let k = 0; k < 4; k++) {
+            const border = getBorderStyle();
+            row.getCell(cBase + k).border = {
+              top: border,
+              bottom: border,
+              left: border,
+              right: border,
+            };
+          }
+
+          const credAddr = `${colToLetter(cBase + 1)}${currentRow}`;
+          const gradeAddr = `${colToLetter(cBase + 2)}${currentRow}`;
+
+          const ptsCell = row.getCell(cBase + 3);
+          // Use nested IFs instead of SWITCH for maximum compatibility (prevents 'Repaired Records' on older Excel)
+          // Grades: A=4, A-=3.7, B+=3.3, B=3, B-=2.7, C+=2.3, C=2, C-=1.7, D+=1.3, D=1, F=0
+          const gVal = `MID(${gradeAddr},1,2)`;
+          const formulaStr = `IF(${gVal}="A",4,IF(${gVal}="A-",3.7,IF(${gVal}="B+",3.3,IF(${gVal}="B",3,IF(${gVal}="B-",2.7,IF(${gVal}="C+",2.3,IF(${gVal}="C",2,IF(${gVal}="C-",1.7,IF(${gVal}="D+",1.3,IF(${gVal}="D",1,IF(${gVal}="F",0,0)))))))))))`;
+
+          ptsCell.value = {
+            formula: `IF(${gradeAddr}="","",IFERROR(${formulaStr}*${credAddr},0))`,
+          };
+          cBase += 4;
+        }
+        currentRow++;
       }
 
       // 4. TOTAL CREDITS Row
@@ -1959,71 +2669,121 @@ function DegreePlanner() {
 
       const termsLists = [fall, spring, summer];
       let baseCol = 1;
-      
-      termsLists.forEach(list => {
-          const future = list.reduce((acc, c) => (c.status === 'planned' || !c.grade || c.grade==='') ? acc + (Number(c.credits)||0) : acc, 0);
-          const achieved = list.reduce((acc, c) => (c.grade && c.grade !== '' && c.grade !== 'F' && c.status === 'taken') ? acc + (Number(c.credits)||0) : acc, 0);
 
-          // "TOTAL CREDITS"
-          const labelCell = totalRow.getCell(baseCol);
-          labelCell.value = 'TOTAL CREDITS';
-          // Explicitly set font since we removed row-level font
-          labelCell.font = { bold: true, name: 'Calibri' };
-          const totalBorder = getBorderStyle();
-          labelCell.border = { top: {style:'double'}, bottom: {style:'double'}, left: totalBorder, right: totalBorder };
-          labelCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
+      termsLists.forEach((list) => {
+        const future = list.reduce(
+          (acc, c) =>
+            c.status === "planned" || !c.grade || c.grade === ""
+              ? acc + (Number(c.credits) || 0)
+              : acc,
+          0
+        );
+        const achieved = list.reduce(
+          (acc, c) =>
+            c.grade && c.grade !== "" && c.grade !== "F" && c.status === "taken"
+              ? acc + (Number(c.credits) || 0)
+              : acc,
+          0
+        );
 
-          // Future/Achieved
-          // Convert static values to dynamic formulas relative to the current block
-          // Range for this term's credits: colToLetter(baseCol+1) from (currentRow - rowsNeeded) to (currentRow - 1)
-          // Range for this term's grades: colToLetter(baseCol+2) ...
-          
-          const startRow = currentRow - rowsNeeded;
-          const endRow = currentRow - 1;
-          const credCol = colToLetter(baseCol + 1);
-          const gradeCol = colToLetter(baseCol + 2);
-          const rangeCreds = `${credCol}${startRow}:${credCol}${endRow}`;
-          const rangeGrades = `${gradeCol}${startRow}:${gradeCol}${endRow}`;
+        // "TOTAL CREDITS"
+        const labelCell = totalRow.getCell(baseCol);
+        labelCell.value = "TOTAL CREDITS";
+        // Explicitly set font since we removed row-level font
+        labelCell.font = { bold: true, name: "Calibri" };
+        const totalBorder = getBorderStyle();
+        labelCell.border = {
+          top: { style: "double" },
+          bottom: { style: "double" },
+          left: totalBorder,
+          right: totalBorder,
+        };
+        labelCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFEFEFEF" },
+        };
 
-          // Formula: ="future: " & SUMIFS(Creds, Grades, "")
-          const fFuture = `SUMIFS(${rangeCreds},${rangeGrades},"")`;
-          // Formula: ="credits achieved: " & SUMIFS(Creds, Grades, "<>")
-          const fAchieved = `SUMIFS(${rangeCreds},${rangeGrades},"<>")`;
-          
-          // Col 2: Future
-          const futureCell = totalRow.getCell(baseCol + 1);
-          futureCell.value = { formula: `"future: " & ${fFuture}` };
-          futureCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; 
-          futureCell.font = { size: 9, bold: true, name: 'Calibri' };
-          futureCell.border = { top: {style:'double'}, bottom: {style:'double'}, left: totalBorder, right: totalBorder };
+        // Future/Achieved
+        // Convert static values to dynamic formulas relative to the current block
+        // Range for this term's credits: colToLetter(baseCol+1) from (currentRow - rowsNeeded) to (currentRow - 1)
+        // Range for this term's grades: colToLetter(baseCol+2) ...
 
-          // Col 3: Achieved
-          const achievedCell = totalRow.getCell(baseCol + 2);
-          achievedCell.value = { formula: `"credits achieved: " & ${fAchieved}` };
-          achievedCell.alignment = { horizontal: 'center', vertical: 'middle', wrapText: true }; 
-          achievedCell.font = { size: 9, bold: true, name: 'Calibri' };
-          achievedCell.border = { top: {style:'double'}, bottom: {style:'double'}, left: totalBorder, right: totalBorder };
-          
-          // No Merge
+        const startRow = currentRow - rowsNeeded;
+        const endRow = currentRow - 1;
+        const credCol = colToLetter(baseCol + 1);
+        const gradeCol = colToLetter(baseCol + 2);
+        const rangeCreds = `${credCol}${startRow}:${credCol}${endRow}`;
+        const rangeGrades = `${gradeCol}${startRow}:${gradeCol}${endRow}`;
 
-          // Points Sum -> Term GPA
-          // Formula: IF(Achieved=0, 0, SUM(Points)/Achieved)
-          // Points range: colToLetter(baseCol+3) startRow:endRow
-          // Achieved credits is fAchieved
-          const pointsCol = colToLetter(baseCol+3);
-          const rangePoints = `${pointsCol}${startRow}:${pointsCol}${endRow}`;
-          
-          const sumCell = totalRow.getCell(baseCol + 3);
-          // Terms GPA: IF(Achieved=0, 0, SumPoints/Achieved)
-          // AchievedCredits (fAchieved) automatically excludes future courses.
-          sumCell.value = { formula: `IF(${fAchieved}=0,0,SUM(${rangePoints})/${fAchieved})` };
-          sumCell.numFmt = '0.00'; // Format as decimal
-          sumCell.font = { bold: true, name: 'Calibri' };
-          sumCell.border = { top: {style:'double'}, bottom: {style:'double'}, left: totalBorder, right: totalBorder };
-          sumCell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFEFEFEF' } };
-          sumCell.alignment = { horizontal: 'center', vertical: 'middle' };
+        // Formula: ="future: " & SUMIFS(Creds, Grades, "")
+        const fFuture = `SUMIFS(${rangeCreds},${rangeGrades},"")`;
+        // Formula: ="credits achieved: " & SUMIFS(Creds, Grades, "<>")
+        const fAchieved = `SUMIFS(${rangeCreds},${rangeGrades},"<>")`;
 
-          baseCol += 4;
+        // Col 2: Future
+        const futureCell = totalRow.getCell(baseCol + 1);
+        futureCell.value = { formula: `"future: " & ${fFuture}` };
+        futureCell.alignment = {
+          horizontal: "center",
+          vertical: "middle",
+          wrapText: true,
+        };
+        futureCell.font = { size: 9, bold: true, name: "Calibri" };
+        futureCell.border = {
+          top: { style: "double" },
+          bottom: { style: "double" },
+          left: totalBorder,
+          right: totalBorder,
+        };
+
+        // Col 3: Achieved
+        const achievedCell = totalRow.getCell(baseCol + 2);
+        achievedCell.value = { formula: `"credits achieved: " & ${fAchieved}` };
+        achievedCell.alignment = {
+          horizontal: "center",
+          vertical: "middle",
+          wrapText: true,
+        };
+        achievedCell.font = { size: 9, bold: true, name: "Calibri" };
+        achievedCell.border = {
+          top: { style: "double" },
+          bottom: { style: "double" },
+          left: totalBorder,
+          right: totalBorder,
+        };
+
+        // No Merge
+
+        // Points Sum -> Term GPA
+        // Formula: IF(Achieved=0, 0, SUM(Points)/Achieved)
+        // Points range: colToLetter(baseCol+3) startRow:endRow
+        // Achieved credits is fAchieved
+        const pointsCol = colToLetter(baseCol + 3);
+        const rangePoints = `${pointsCol}${startRow}:${pointsCol}${endRow}`;
+
+        const sumCell = totalRow.getCell(baseCol + 3);
+        // Terms GPA: IF(Achieved=0, 0, SumPoints/Achieved)
+        // AchievedCredits (fAchieved) automatically excludes future courses.
+        sumCell.value = {
+          formula: `IF(${fAchieved}=0,0,SUM(${rangePoints})/${fAchieved})`,
+        };
+        sumCell.numFmt = "0.00"; // Format as decimal
+        sumCell.font = { bold: true, name: "Calibri" };
+        sumCell.border = {
+          top: { style: "double" },
+          bottom: { style: "double" },
+          left: totalBorder,
+          right: totalBorder,
+        };
+        sumCell.fill = {
+          type: "pattern",
+          pattern: "solid",
+          fgColor: { argb: "FFEFEFEF" },
+        };
+        sumCell.alignment = { horizontal: "center", vertical: "middle" };
+
+        baseCol += 4;
       });
       currentRow++;
 
@@ -2033,9 +2793,13 @@ function DegreePlanner() {
     });
 
     // Hidden JSON backup sheet
-    const backup = workbook.addWorksheet('__json_backup');
-    backup.state = 'veryHidden';
-    const backupJson = JSON.stringify({ plan: degreePlan, years, programs: selectedPrograms });
+    const backup = workbook.addWorksheet("__json_backup");
+    backup.state = "veryHidden";
+    const backupJson = JSON.stringify({
+      plan: degreePlan,
+      years,
+      programs: selectedPrograms,
+    });
     const maxChunk = 32000;
     for (let i = 0; i < backupJson.length; i += maxChunk) {
       backup.addRow([backupJson.slice(i, i + maxChunk)]);
@@ -2043,20 +2807,22 @@ function DegreePlanner() {
 
     // Generate file
     const buffer = await workbook.xlsx.writeBuffer();
-    const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+    const blob = new Blob([buffer], {
+      type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
+    const a = document.createElement("a");
     a.href = url;
-    const dateStr = new Date().toISOString().split('T')[0];
+    const dateStr = new Date().toISOString().split("T")[0];
     a.download = `wsu-degree-plan-${dateStr}.xlsx`;
     a.click();
-    toast.success('Degree plan exported successfully');
+    toast.success("Degree plan exported successfully");
   };
 
   // Print/Save as PDF
   const handlePrintPDF = () => {
     // Create a print-friendly version of the degree plan
-    const printContent = document.createElement('div');
+    const printContent = document.createElement("div");
     // Build the inner printable content (no footer here - we'll render a fixed footer)
     printContent.innerHTML = `
       <style>
@@ -2074,22 +2840,45 @@ function DegreePlanner() {
       </style>
       <div id="print-content">
         <h1>WSU Degree Plan</h1>
-        <p><strong>Degree:</strong> ${selectedPrograms?.majors?.[0]?.name || 'Not Selected'}</p>
-        <p><strong>Catalog Year:</strong> ${selectedYear || 'Current'}</p>
-        ${selectedPrograms?.minors?.length ? `<p><strong>Minors:</strong> ${selectedPrograms.minors.map(m => m.name).join(', ')}</p>` : ''}
-        ${selectedPrograms?.certificates?.length ? `<p><strong>Certificates:</strong> ${selectedPrograms.certificates.map(c => c.name).join(', ')}</p>` : ''}
+        <p><strong>Degree:</strong> ${
+          selectedPrograms?.majors?.[0]?.name || "Not Selected"
+        }</p>
+        <p><strong>Catalog Year:</strong> ${selectedYear || "Current"}</p>
+        ${
+          selectedPrograms?.minors?.length
+            ? `<p><strong>Minors:</strong> ${selectedPrograms.minors
+                .map((m) => m.name)
+                .join(", ")}</p>`
+            : ""
+        }
+        ${
+          selectedPrograms?.certificates?.length
+            ? `<p><strong>Certificates:</strong> ${selectedPrograms.certificates
+                .map((c) => c.name)
+                .join(", ")}</p>`
+            : ""
+        }
 
         <div class="stats">
           <div class="stat-box"><strong>GPA:</strong> ${gpa}</div>
           <div class="stat-box"><strong>Credits Achieved:</strong> ${creditsAchieved}</div>
           <div class="stat-box"><strong>Credits Planned:</strong> ${creditsPlanned}</div>
           <div class="stat-box"><strong>Credits Required:</strong> ${creditsRequired}</div>
-          <div class="stat-box"><strong>Progress:</strong> ${creditsRequired > 0 ? Math.round((creditsAchieved / creditsRequired) * 100) : 0}%</div>
+          <div class="stat-box"><strong>Progress:</strong> ${
+            creditsRequired > 0
+              ? Math.round((creditsAchieved / creditsRequired) * 100)
+              : 0
+          }%</div>
         </div>
 
-        ${years.map(year => {
-          const yearData = degreePlan[year.id] || { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
-          return `
+        ${years
+          .map((year) => {
+            const yearData = degreePlan[year.id] || {
+              fall: { courses: [] },
+              spring: { courses: [] },
+              summer: { courses: [] },
+            };
+            return `
             <h2>${year.name}</h2>
             <table>
               <tr>
@@ -2109,22 +2898,50 @@ function DegreePlanner() {
                   yearData.summer.courses.length,
                   1
                 );
-                let rows = '';
+                let rows = "";
                 for (let i = 0; i < maxRows; i++) {
                   const fall = yearData.fall.courses[i] || {};
                   const spring = yearData.spring.courses[i] || {};
                   const summer = yearData.summer.courses[i] || {};
-                  rows += '<tr>';
-                  rows += '<td>' + (fall.name || '') + '</td><td>' + (fall.credits || '') + '</td><td>' + (fall.status || '') + '</td><td>' + (fall.grade || '') + '</td>';
-                  rows += '<td>' + (spring.name || '') + '</td><td>' + (spring.credits || '') + '</td><td>' + (spring.status || '') + '</td><td>' + (spring.grade || '') + '</td>';
-                  rows += '<td>' + (summer.name || '') + '</td><td>' + (summer.credits || '') + '</td><td>' + (summer.status || '') + '</td><td>' + (summer.grade || '') + '</td>';
-                  rows += '</tr>';
+                  rows += "<tr>";
+                  rows +=
+                    "<td>" +
+                    (fall.name || "") +
+                    "</td><td>" +
+                    (fall.credits || "") +
+                    "</td><td>" +
+                    (fall.status || "") +
+                    "</td><td>" +
+                    (fall.grade || "") +
+                    "</td>";
+                  rows +=
+                    "<td>" +
+                    (spring.name || "") +
+                    "</td><td>" +
+                    (spring.credits || "") +
+                    "</td><td>" +
+                    (spring.status || "") +
+                    "</td><td>" +
+                    (spring.grade || "") +
+                    "</td>";
+                  rows +=
+                    "<td>" +
+                    (summer.name || "") +
+                    "</td><td>" +
+                    (summer.credits || "") +
+                    "</td><td>" +
+                    (summer.status || "") +
+                    "</td><td>" +
+                    (summer.grade || "") +
+                    "</td>";
+                  rows += "</tr>";
                 }
                 return rows;
               })()}
             </table>
           `;
-        }).join('')}
+          })
+          .join("")}
       </div>
     `;
 
@@ -2155,7 +2972,7 @@ function DegreePlanner() {
       </html>`;
 
     // Open print dialog and trigger print after the document loads so <title> and layout apply
-    const printWindow = window.open('', '_blank');
+    const printWindow = window.open("", "_blank");
     printWindow.document.open();
     printWindow.document.write(html);
     printWindow.document.close();
@@ -2164,7 +2981,7 @@ function DegreePlanner() {
       try {
         printWindow.print();
       } catch (e) {
-        console.warn('Print failed', e);
+        console.warn("Print failed", e);
       }
     };
     toast.success('Print dialog opened - select "Save as PDF" to export');
@@ -2181,10 +2998,10 @@ function DegreePlanner() {
       await workbook.xlsx.load(buffer);
 
       // Prefer the hidden JSON backup for an exact round-trip restore
-      const backupSheet = workbook.getWorksheet('__json_backup');
+      const backupSheet = workbook.getWorksheet("__json_backup");
       if (backupSheet) {
         // reassemble JSON from rows
-        let jsonStr = '';
+        let jsonStr = "";
         backupSheet.eachRow((row) => {
           const v = row.getCell(1).value;
           if (v) jsonStr += String(v);
@@ -2195,29 +3012,39 @@ function DegreePlanner() {
             // if years array present, prefer it
             if (parsed.years) setYears(parsed.years);
             setDegreePlan(parsed.plan || {});
-            setSelectedPrograms(parsed.programs || { majors: [], minors: [], certificates: [] });
-            toast.success('Import successful (restored from hidden backup).');
+            setSelectedPrograms(
+              parsed.programs || { majors: [], minors: [], certificates: [] }
+            );
+            toast.success("Import successful (restored from hidden backup).");
             return;
           }
         } catch (e) {
           // fall through to legacy parsing if JSON malformed
-          console.warn('Failed to parse __json_backup:', e);
+          console.warn("Failed to parse __json_backup:", e);
         }
       }
 
       // Fallback: try legacy sheet names (either 'WSU Degree Plan' or 'Degree Plan')
-      const worksheet = workbook.getWorksheet('WSU Degree Plan') || workbook.getWorksheet('Degree Plan');
-      if (!worksheet) throw new Error('Degree Plan sheet not found');
+      const worksheet =
+        workbook.getWorksheet("WSU Degree Plan") ||
+        workbook.getWorksheet("Degree Plan");
+      if (!worksheet) throw new Error("Degree Plan sheet not found");
 
       // Legacy parsing assumes the stacked per-year layout where each year has a title row,
       // two header rows, then N rows of term-aligned courses. We'll extract by scanning rows.
       const newPlan = {};
-      years.forEach(year => {
-        newPlan[year.id] = { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
+      years.forEach((year) => {
+        newPlan[year.id] = {
+          fall: { courses: [] },
+          spring: { courses: [] },
+          summer: { courses: [] },
+        };
       });
 
       // We'll iterate rows and detect title rows by checking if the first cell contains a Year name.
-      const yearNameToId = Object.fromEntries(years.map(y => [String(y.name), y.id]));
+      const yearNameToId = Object.fromEntries(
+        years.map((y) => [String(y.name), y.id])
+      );
 
       let currentYearId = null;
       let inDataSection = false;
@@ -2225,7 +3052,7 @@ function DegreePlanner() {
 
       worksheet.eachRow((row, rowNumber) => {
         const first = row.getCell(1).value;
-        if (first && typeof first === 'string' && yearNameToId[first.trim()]) {
+        if (first && typeof first === "string" && yearNameToId[first.trim()]) {
           // Title row
           currentYearId = yearNameToId[first.trim()];
           inDataSection = false;
@@ -2235,7 +3062,10 @@ function DegreePlanner() {
 
         // Detect sub-header rows (Course/Credits/Grade/Points)
         const maybeCourse = row.getCell(2).value;
-        if (maybeCourse && String(maybeCourse).toLowerCase().includes('course')) {
+        if (
+          maybeCourse &&
+          String(maybeCourse).toLowerCase().includes("course")
+        ) {
           headerRowsSeen += 1;
           // after two header rows, next rows are data
           if (headerRowsSeen >= 1) inDataSection = true;
@@ -2249,7 +3079,7 @@ function DegreePlanner() {
         try {
           const getVal = (colIdx) => {
             const v = row.getCell(colIdx).value;
-            if (v && v.result !== undefined && v.formula) return ''; // formula cell
+            if (v && v.result !== undefined && v.formula) return ""; // formula cell
             return v;
           };
 
@@ -2257,49 +3087,102 @@ function DegreePlanner() {
           const base = 2;
           const fallCourse = getVal(base);
           const fallCredits = parseFloat(getVal(base + 1)) || 0;
-          const fallGrade = getVal(base + 2) || '';
-          if (fallCourse) newPlan[currentYearId].fall.courses.push({ id: Date.now() + Math.random(), name: String(fallCourse), credits: fallCredits, grade: String(fallGrade || ''), status: 'not-taken' });
+          const fallGrade = getVal(base + 2) || "";
+          if (fallCourse)
+            newPlan[currentYearId].fall.courses.push({
+              id: Date.now() + Math.random(),
+              name: String(fallCourse),
+              credits: fallCredits,
+              grade: String(fallGrade || ""),
+              status: "not-taken",
+            });
 
           const springCourse = getVal(base + 4);
           const springCredits = parseFloat(getVal(base + 5)) || 0;
-          const springGrade = getVal(base + 6) || '';
-          if (springCourse) newPlan[currentYearId].spring.courses.push({ id: Date.now() + Math.random(), name: String(springCourse), credits: springCredits, grade: String(springGrade || ''), status: 'not-taken' });
+          const springGrade = getVal(base + 6) || "";
+          if (springCourse)
+            newPlan[currentYearId].spring.courses.push({
+              id: Date.now() + Math.random(),
+              name: String(springCourse),
+              credits: springCredits,
+              grade: String(springGrade || ""),
+              status: "not-taken",
+            });
 
           const summerCourse = getVal(base + 8);
           const summerCredits = parseFloat(getVal(base + 9)) || 0;
-          const summerGrade = getVal(base + 10) || '';
-          if (summerCourse) newPlan[currentYearId].summer.courses.push({ id: Date.now() + Math.random(), name: String(summerCourse), credits: summerCredits, grade: String(summerGrade || ''), status: 'not-taken' });
+          const summerGrade = getVal(base + 10) || "";
+          if (summerCourse)
+            newPlan[currentYearId].summer.courses.push({
+              id: Date.now() + Math.random(),
+              name: String(summerCourse),
+              credits: summerCredits,
+              grade: String(summerGrade || ""),
+              status: "not-taken",
+            });
         } catch (err) {
           // ignore row parse errors
         }
       });
 
       setDegreePlan(newPlan);
-      toast.success('Import successful (legacy parsing).');
+      toast.success("Import successful (legacy parsing).");
     } catch (error) {
-      console.error('Import error:', error);
-      toast.error('Error importing file. Please check format.');
+      console.error("Import error:", error);
+      toast.error("Error importing file. Please check format.");
     }
   };
 
   // Reset / delete entire degree plan and selected programs
   const handleResetPlan = () => {
-    const ok = window.confirm('Reset degree plan and selected programs? This cannot be undone.');
+    const ok = window.confirm(
+      "Reset degree plan and selected programs? This cannot be undone."
+    );
     if (!ok) return;
 
     const defaultYears = [
-      { id: 1, name: 'Year 1' },
-      { id: 2, name: 'Year 2' },
-      { id: 3, name: 'Year 3' },
-      { id: 4, name: 'Year 4' }
+      { id: 1, name: "Year 1" },
+      { id: 2, name: "Year 2" },
+      { id: 3, name: "Year 3" },
+      { id: 4, name: "Year 4" },
     ];
 
     const emptyPlan = {};
     defaultYears.forEach((y, idx) => {
       emptyPlan[y.id] = {
-        fall: { courses: [{ id: Date.now() + idx * 10 + 1, name: '', credits: 0, grade: '', status: 'not-taken' }] },
-        spring: { courses: [{ id: Date.now() + idx * 10 + 2, name: '', credits: 0, grade: '', status: 'not-taken' }] },
-        summer: { courses: [{ id: Date.now() + idx * 10 + 3, name: '', credits: 0, grade: '', status: 'not-taken' }] }
+        fall: {
+          courses: [
+            {
+              id: Date.now() + idx * 10 + 1,
+              name: "",
+              credits: 0,
+              grade: "",
+              status: "not-taken",
+            },
+          ],
+        },
+        spring: {
+          courses: [
+            {
+              id: Date.now() + idx * 10 + 2,
+              name: "",
+              credits: 0,
+              grade: "",
+              status: "not-taken",
+            },
+          ],
+        },
+        summer: {
+          courses: [
+            {
+              id: Date.now() + idx * 10 + 3,
+              name: "",
+              credits: 0,
+              grade: "",
+              status: "not-taken",
+            },
+          ],
+        },
       };
     });
 
@@ -2308,10 +3191,14 @@ function DegreePlanner() {
     setSelectedPrograms({ majors: [], minors: [], certificates: [] });
     // Persist cleared plan
     try {
-      saveDegreePlan({ plan: emptyPlan, years: defaultYears, programs: { majors: [], minors: [], certificates: [] } });
-      console.debug('[DegreePlanner] reset saved to storage');
+      saveDegreePlan({
+        plan: emptyPlan,
+        years: defaultYears,
+        programs: { majors: [], minors: [], certificates: [] },
+      });
+      console.debug("[DegreePlanner] reset saved to storage");
     } catch (e) {
-      console.error('Failed to save reset plan:', e);
+      console.error("Failed to save reset plan:", e);
     }
   };
 
@@ -2319,25 +3206,40 @@ function DegreePlanner() {
   // Use allowedUcoreCategories from cache when available, otherwise derive from results
   const isUcoreAggregated = Boolean(
     (allowedUcoreCategories && allowedUcoreCategories.length > 0) ||
-    (catalogResults && catalogResults.length > 0 && catalogResults.some(r => Array.isArray(r._ucoreMatches) && r._ucoreMatches.length > 0))
+      (catalogResults &&
+        catalogResults.length > 0 &&
+        catalogResults.some(
+          (r) => Array.isArray(r._ucoreMatches) && r._ucoreMatches.length > 0
+        ))
   );
   // Prefer allowedUcoreCategories (from cache) over derived categories
-  const availableUcoreCats = (allowedUcoreCategories && allowedUcoreCategories.length > 0)
-    ? allowedUcoreCategories
-    : (isUcoreAggregated ? Array.from(new Set(catalogResults.flatMap(r => r._ucoreMatches || []))) : []);
-  const filteredCatalogResults = (catalogResults || []).filter(r => {
-    if (isUcoreAggregated && catalogUcoreSelected) {
-      return Array.isArray(r._ucoreMatches) ? r._ucoreMatches.includes(catalogUcoreSelected) : false;
-    }
-    return true;
-  }).filter(r => {
-    if (!catalogClientSearch) return true;
-    const q = catalogClientSearch.toLowerCase();
-    const code = String(r.code || `${r.prefix || ''} ${r.number || ''}`).toLowerCase();
-    const title = String(r.title || '').toLowerCase();
-    const desc = String(r.description || '').toLowerCase();
-    return code.includes(q) || title.includes(q) || desc.includes(q);
-  });
+  const availableUcoreCats =
+    allowedUcoreCategories && allowedUcoreCategories.length > 0
+      ? allowedUcoreCategories
+      : isUcoreAggregated
+      ? Array.from(
+          new Set(catalogResults.flatMap((r) => r._ucoreMatches || []))
+        )
+      : [];
+  const filteredCatalogResults = (catalogResults || [])
+    .filter((r) => {
+      if (isUcoreAggregated && catalogUcoreSelected) {
+        return Array.isArray(r._ucoreMatches)
+          ? r._ucoreMatches.includes(catalogUcoreSelected)
+          : false;
+      }
+      return true;
+    })
+    .filter((r) => {
+      if (!catalogClientSearch) return true;
+      const q = catalogClientSearch.toLowerCase();
+      const code = String(
+        r.code || `${r.prefix || ""} ${r.number || ""}`
+      ).toLowerCase();
+      const title = String(r.title || "").toLowerCase();
+      const desc = String(r.description || "").toLowerCase();
+      return code.includes(q) || title.includes(q) || desc.includes(q);
+    });
 
   // Reset carousel index when client filters change
   useEffect(() => {
@@ -2348,16 +3250,104 @@ function DegreePlanner() {
   useEffect(() => {
     if (!showGradeScale) return;
     const onKey = (e) => {
-      if (e.key === 'Escape') setShowGradeScale(false);
+      if (e.key === "Escape") setShowGradeScale(false);
     };
-    document.addEventListener('keydown', onKey);
-    return () => document.removeEventListener('keydown', onKey);
+    document.addEventListener("keydown", onKey);
+    return () => document.removeEventListener("keydown", onKey);
   }, [showGradeScale]);
+
+  // Global keyboard shortcuts
+  useEffect(() => {
+    const handleKeyDown = (e) => {
+      // Ignore if user is typing in an input/textarea
+      const target = e.target;
+      if (
+        target.tagName === "INPUT" ||
+        target.tagName === "TEXTAREA" ||
+        target.isContentEditable
+      ) {
+        return;
+      }
+
+      const isMac = navigator.platform.toUpperCase().indexOf("MAC") >= 0;
+      const ctrlKey = isMac ? e.metaKey : e.ctrlKey;
+
+      // Undo: Ctrl/Cmd + Z
+      if (ctrlKey && e.key === "z" && !e.shiftKey) {
+        e.preventDefault();
+        undo();
+        toast.success("Undone");
+      }
+
+      // Redo: Ctrl/Cmd + Shift + Z or Ctrl/Cmd + Y
+      if (
+        (ctrlKey && e.shiftKey && e.key === "z") ||
+        (ctrlKey && e.key === "y")
+      ) {
+        e.preventDefault();
+        redo();
+        toast.success("Redone");
+      }
+
+      // Show keyboard shortcuts: ?
+      if (e.key === "?" && !ctrlKey && !e.shiftKey && !e.altKey) {
+        e.preventDefault();
+        setShowKeyboardShortcuts(true);
+      }
+    };
+
+    document.addEventListener("keydown", handleKeyDown);
+    return () => document.removeEventListener("keydown", handleKeyDown);
+  }, [undo, redo]);
 
   return (
     <div className="space-y-6">
       {/* Action Buttons */}
       <div className="flex flex-wrap justify-end gap-2">
+        {/* Undo/Redo Buttons */}
+        <button
+          onClick={undo}
+          disabled={!canUndo}
+          className="w-auto px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition touch-manipulation text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Undo last change"
+          title="Undo (Ctrl+Z)"
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M3 10h10a8 8 0 018 8v2M3 10l6 6m-6-6l6-6"
+            />
+          </svg>
+        </button>
+        <button
+          onClick={redo}
+          disabled={!canRedo}
+          className="w-auto px-3 py-2 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-200 rounded-md hover:bg-gray-300 dark:hover:bg-gray-600 transition touch-manipulation text-sm disabled:opacity-40 disabled:cursor-not-allowed"
+          aria-label="Redo last undone change"
+          title="Redo (Ctrl+Shift+Z)"
+        >
+          <svg
+            className="w-5 h-5"
+            fill="none"
+            viewBox="0 0 24 24"
+            stroke="currentColor"
+            strokeWidth={2}
+          >
+            <path
+              strokeLinecap="round"
+              strokeLinejoin="round"
+              d="M21 10h-10a8 8 0 00-8 8v2M21 10l-6 6m6-6l-6-6"
+            />
+          </svg>
+        </button>
+
         <button
           onClick={() => setShowOptimizeModal(true)}
           className="w-full sm:w-auto px-3 py-2 sm:px-4 sm:py-2 bg-wsu-crimson text-white rounded-md hover:bg-red-800 transition touch-manipulation text-sm"
@@ -2383,7 +3373,12 @@ function DegreePlanner() {
         </button>
         <label className="w-full sm:w-auto flex items-center justify-center px-3 py-2 sm:px-4 sm:py-2 bg-green-600 text-white rounded-md hover:bg-green-700 transition cursor-pointer touch-manipulation text-sm">
           <span>Import</span>
-          <input type="file" accept=".xlsx" onChange={handleImport} className="hidden" />
+          <input
+            type="file"
+            accept=".xlsx"
+            onChange={handleImport}
+            className="hidden"
+          />
         </label>
         <button
           onClick={handleResetPlan}
@@ -2410,25 +3405,33 @@ function DegreePlanner() {
         </button>
 
         <div className="bg-white px-3 py-2 rounded-md shadow touch-manipulation text-sm text-center">
-          <div className="text-xl font-bold text-green-600">{creditsAchieved}</div>
+          <div className="text-xl font-bold text-green-600">
+            {creditsAchieved}
+          </div>
           <div className="text-xs text-gray-600">Credits Achieved</div>
         </div>
 
         <div className="bg-white px-3 py-2 rounded-md shadow touch-manipulation text-sm text-center">
-          <div className="text-xl font-bold text-blue-600">{creditsPlanned}</div>
+          <div className="text-xl font-bold text-blue-600">
+            {creditsPlanned}
+          </div>
           <div className="text-xs text-gray-600">Credits Planned</div>
         </div>
 
         <div className="bg-white px-3 py-2 rounded-md shadow touch-manipulation text-sm text-center">
-          <div className="text-xl font-bold text-purple-600">{creditsRequired}</div>
+          <div className="text-xl font-bold text-purple-600">
+            {creditsRequired}
+          </div>
           <div className="text-xs text-gray-600">Credits Required</div>
         </div>
 
         <div className="bg-white px-3 py-2 rounded-md shadow touch-manipulation text-sm text-center">
-            <div className="min-h-[2.25rem] flex flex-col items-center justify-center">
-              <div className="text-lg font-bold text-gray-900 break-words">{progress || 'Not Started'}</div>
-              <div className="text-xs text-gray-600 mt-1">Ready to Graduate</div>
+          <div className="min-h-[2.25rem] flex flex-col items-center justify-center">
+            <div className="text-lg font-bold text-gray-900 break-words">
+              {progress || "Not Started"}
             </div>
+            <div className="text-xs text-gray-600 mt-1">Ready to Graduate</div>
+          </div>
         </div>
       </div>
 
@@ -2438,7 +3441,11 @@ function DegreePlanner() {
           <div className="flex justify-between items-center mb-2">
             <h4 className="font-semibold text-gray-800">Degree Progress</h4>
             <span className="text-sm font-medium text-gray-600">
-              {Math.min(Math.round((creditsAchieved / creditsRequired) * 100), 100)}% Complete
+              {Math.min(
+                Math.round((creditsAchieved / creditsRequired) * 100),
+                100
+              )}
+              % Complete
             </span>
           </div>
 
@@ -2447,14 +3454,29 @@ function DegreePlanner() {
             {/* Achieved (green) */}
             <div
               className="absolute h-full bg-green-500 transition-all duration-500"
-              style={{ width: `${Math.min((creditsAchieved / creditsRequired) * 100, 100)}%` }}
+              style={{
+                width: `${Math.min(
+                  (creditsAchieved / creditsRequired) * 100,
+                  100
+                )}%`,
+              }}
             />
             {/* Planned but not achieved (blue striped) */}
             <div
               className="absolute h-full bg-blue-400 opacity-60 transition-all duration-500"
               style={{
-                left: `${Math.min((creditsAchieved / creditsRequired) * 100, 100)}%`,
-                width: `${Math.max(Math.min(((creditsPlanned - creditsAchieved) / creditsRequired) * 100, 100 - (creditsAchieved / creditsRequired) * 100), 0)}%`
+                left: `${Math.min(
+                  (creditsAchieved / creditsRequired) * 100,
+                  100
+                )}%`,
+                width: `${Math.max(
+                  Math.min(
+                    ((creditsPlanned - creditsAchieved) / creditsRequired) *
+                      100,
+                    100 - (creditsAchieved / creditsRequired) * 100
+                  ),
+                  0
+                )}%`,
               }}
             />
             {/* Percentage label inside bar */}
@@ -2467,34 +3489,64 @@ function DegreePlanner() {
           <div className="flex flex-wrap gap-4 mt-3 text-xs">
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 bg-green-500 rounded"></div>
-              <span className="text-gray-600">Completed ({creditsAchieved} cr)</span>
+              <span className="text-gray-600">
+                Completed ({creditsAchieved} cr)
+              </span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 bg-blue-400 rounded"></div>
-              <span className="text-gray-600">In Progress / Planned ({creditsPlanned - creditsAchieved} cr)</span>
+              <span className="text-gray-600">
+                In Progress / Planned ({creditsPlanned - creditsAchieved} cr)
+              </span>
             </div>
             <div className="flex items-center gap-1">
               <div className="w-3 h-3 bg-gray-200 rounded"></div>
-              <span className="text-gray-600">Remaining ({Math.max(creditsRequired - creditsPlanned, 0)} cr)</span>
+              <span className="text-gray-600">
+                Remaining ({Math.max(creditsRequired - creditsPlanned, 0)} cr)
+              </span>
             </div>
           </div>
 
           {/* Milestones */}
           <div className="mt-3 pt-3 border-t border-gray-100">
             <div className="grid grid-cols-4 gap-2 text-center text-xs">
-              <div className={`p-2 rounded ${creditsAchieved >= 30 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <div
+                className={`p-2 rounded ${
+                  creditsAchieved >= 30
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
                 <div className="font-semibold">30 cr</div>
                 <div>Sophomore</div>
               </div>
-              <div className={`p-2 rounded ${creditsAchieved >= 60 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <div
+                className={`p-2 rounded ${
+                  creditsAchieved >= 60
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
                 <div className="font-semibold">60 cr</div>
                 <div>Junior</div>
               </div>
-              <div className={`p-2 rounded ${creditsAchieved >= 90 ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <div
+                className={`p-2 rounded ${
+                  creditsAchieved >= 90
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
                 <div className="font-semibold">90 cr</div>
                 <div>Senior</div>
               </div>
-              <div className={`p-2 rounded ${creditsAchieved >= creditsRequired ? 'bg-green-100 text-green-700' : 'bg-gray-100 text-gray-500'}`}>
+              <div
+                className={`p-2 rounded ${
+                  creditsAchieved >= creditsRequired
+                    ? "bg-green-100 text-green-700"
+                    : "bg-gray-100 text-gray-500"
+                }`}
+              >
                 <div className="font-semibold">{creditsRequired} cr</div>
                 <div>Graduate</div>
               </div>
@@ -2504,47 +3556,65 @@ function DegreePlanner() {
       )}
 
       {/* Grade Scale Modal */}
-      <GradeScaleModal show={showGradeScale} onClose={() => setShowGradeScale(false)} />
+      <GradeScaleModal
+        show={showGradeScale}
+        onClose={() => setShowGradeScale(false)}
+      />
+
+      {/* Keyboard Shortcuts Modal */}
+      <KeyboardShortcutsModal
+        show={showKeyboardShortcuts}
+        onClose={() => setShowKeyboardShortcuts(false)}
+      />
 
       {/* Class Grade Calculator modal (opened per-course) */}
       {showClassCalc && (
         <ClassGradeCalculator
           courseName={classCalcCourseName}
-          onClose={() => { setShowClassCalc(false); setClassCalcCourseName(null); }}
+          onClose={() => {
+            setShowClassCalc(false);
+            setClassCalcCourseName(null);
+          }}
         />
       )}
 
-        {/* Catalog Course Picker Modal */}
-        <CatalogModal
-          show={showCatalogModal}
-          onClose={() => { setShowCatalogModal(false); setAllowedUcoreCategories([]); setCatalogUcoreSelected(null); setCatalogTarget(null); setCatalogTargetCourse(null); }}
-          catalogResults={catalogResults}
-          filteredCatalogResults={filteredCatalogResults}
-          isUcoreAggregated={isUcoreAggregated}
-          catalogSearch={catalogSearch}
-          setCatalogSearch={setCatalogSearch}
-          catalogClientSearch={catalogClientSearch}
-          setCatalogClientSearch={setCatalogClientSearch}
-          catalogYears={catalogYears}
-          catalogModalYear={catalogModalYear}
-          setCatalogModalYear={setCatalogModalYear}
-          catalogModalTerm={catalogModalTerm}
-          setCatalogModalTerm={setCatalogModalTerm}
-          availableUcoreCats={availableUcoreCats}
-          catalogUcoreSelected={catalogUcoreSelected}
-          setCatalogUcoreSelected={setCatalogUcoreSelected}
-          ucoreRemainingCredits={ucoreRemainingCredits}
-          catalogViewMode={catalogViewMode}
-          setCatalogViewMode={setCatalogViewMode}
-          catalogIndex={catalogIndex}
-          setCatalogIndex={setCatalogIndex}
-          catalogTarget={catalogTarget}
-          fetchCatalogCandidates={fetchCatalogCandidates}
-          addCatalogCourseToPlan={addCatalogCourseToPlan}
-          autoFillUcore={autoFillUcore}
-          years={years}
-          activeYearTab={activeYearTab}
-        />
+      {/* Catalog Course Picker Modal */}
+      <CatalogModal
+        show={showCatalogModal}
+        onClose={() => {
+          setShowCatalogModal(false);
+          setAllowedUcoreCategories([]);
+          setCatalogUcoreSelected(null);
+          setCatalogTarget(null);
+          setCatalogTargetCourse(null);
+        }}
+        catalogResults={catalogResults}
+        filteredCatalogResults={filteredCatalogResults}
+        isUcoreAggregated={isUcoreAggregated}
+        catalogSearch={catalogSearch}
+        setCatalogSearch={setCatalogSearch}
+        catalogClientSearch={catalogClientSearch}
+        setCatalogClientSearch={setCatalogClientSearch}
+        catalogYears={catalogYears}
+        catalogModalYear={catalogModalYear}
+        setCatalogModalYear={setCatalogModalYear}
+        catalogModalTerm={catalogModalTerm}
+        setCatalogModalTerm={setCatalogModalTerm}
+        availableUcoreCats={availableUcoreCats}
+        catalogUcoreSelected={catalogUcoreSelected}
+        setCatalogUcoreSelected={setCatalogUcoreSelected}
+        ucoreRemainingCredits={ucoreRemainingCredits}
+        catalogViewMode={catalogViewMode}
+        setCatalogViewMode={setCatalogViewMode}
+        catalogIndex={catalogIndex}
+        setCatalogIndex={setCatalogIndex}
+        catalogTarget={catalogTarget}
+        fetchCatalogCandidates={fetchCatalogCandidates}
+        addCatalogCourseToPlan={addCatalogCourseToPlan}
+        autoFillUcore={autoFillUcore}
+        years={years}
+        activeYearTab={activeYearTab}
+      />
 
       {/* Degree Selection */}
       <DegreeSelector
@@ -2571,14 +3641,14 @@ function DegreePlanner() {
         {/* Tab Headers */}
         <div className="border-b border-gray-200 flex items-center">
           <div className="flex overflow-x-auto flex-1">
-            {years.map(year => (
+            {years.map((year) => (
               <button
                 key={year.id}
                 onClick={() => setActiveYearTab(year.id)}
                 className={`px-6 py-3 font-medium transition whitespace-nowrap ${
                   activeYearTab === year.id
-                    ? 'text-wsu-crimson border-b-2 border-wsu-crimson'
-                    : 'text-gray-600 hover:text-gray-900'
+                    ? "text-wsu-crimson border-b-2 border-wsu-crimson"
+                    : "text-gray-600 hover:text-gray-900"
                 }`}
               >
                 {year.name}
@@ -2591,8 +3661,18 @@ function DegreePlanner() {
               className="p-2 text-gray-600 hover:text-wsu-crimson hover:bg-gray-100 rounded transition"
               title="Add Year"
             >
-              <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
+              <svg
+                className="w-5 h-5"
+                fill="none"
+                stroke="currentColor"
+                viewBox="0 0 24 24"
+              >
+                <path
+                  strokeLinecap="round"
+                  strokeLinejoin="round"
+                  strokeWidth={2}
+                  d="M12 4v16m8-8H4"
+                />
               </svg>
             </button>
             {years.length > 1 && (
@@ -2601,8 +3681,18 @@ function DegreePlanner() {
                 className="p-2 text-gray-600 hover:text-red-600 hover:bg-red-50 rounded transition"
                 title="Delete Current Year"
               >
-                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" />
+                <svg
+                  className="w-5 h-5"
+                  fill="none"
+                  stroke="currentColor"
+                  viewBox="0 0 24 24"
+                >
+                  <path
+                    strokeLinecap="round"
+                    strokeLinejoin="round"
+                    strokeWidth={2}
+                    d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"
+                  />
                 </svg>
               </button>
             )}
@@ -2611,23 +3701,30 @@ function DegreePlanner() {
 
         {/* Tab Content */}
         <div className="p-6">
-          {years.filter(year => year.id === activeYearTab).map(year => (
-            <YearSection
-              key={year.id}
-              year={year}
-              degreePlan={degreePlan}
-              setDegreePlan={setDegreePlan}
-              onDeleteYear={() => handleDeleteYear(year.id)}
-              canDelete={years.length > 1}
-              hideHeader={true}
-              openCatalogForCourse={openCatalogForCourse}
-              openClassCalc={(name) => { console.log('[DegreePlanner] openClassCalc ->', name); setClassCalcCourseName(name); setShowClassCalc(true); }}
-              activeTermTab={activeTermTab}
-              setActiveTermTab={setActiveTermTab}
-              allCompletedCourses={allCompletedCourses}
-              duplicateCourses={duplicateCourses}
-            />
-          ))}
+          {years
+            .filter((year) => year.id === activeYearTab)
+            .map((year) => (
+              <YearSection
+                key={year.id}
+                year={year}
+                degreePlan={degreePlan}
+                setDegreePlan={setDegreePlan}
+                onDeleteYear={() => handleDeleteYear(year.id)}
+                canDelete={years.length > 1}
+                hideHeader={true}
+                openCatalogForCourse={openCatalogForCourse}
+                openClassCalc={(name) => {
+                  console.log("[DegreePlanner] openClassCalc ->", name);
+                  setClassCalcCourseName(name);
+                  setShowClassCalc(true);
+                }}
+                onMoveClick={handleMoveClick}
+                activeTermTab={activeTermTab}
+                setActiveTermTab={setActiveTermTab}
+                allCompletedCourses={allCompletedCourses}
+                duplicateCourses={duplicateCourses}
+              />
+            ))}
         </div>
       </div>
 
@@ -2638,6 +3735,17 @@ function DegreePlanner() {
         optimizeSpeed={optimizeSpeed}
         setOptimizeSpeed={setOptimizeSpeed}
         onOptimize={handleOptimize}
+      />
+
+      {/* Course Move Modal */}
+      <CourseDestinationPicker
+        show={showMoveModal}
+        onClose={() => setShowMoveModal(false)}
+        course={moveModalData.course}
+        currentYear={moveModalData.fromYear}
+        currentTerm={moveModalData.fromTerm}
+        years={years}
+        onMove={handleMoveCourse}
       />
     </div>
   );

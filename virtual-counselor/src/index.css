@@ -8,12 +8,22 @@
   --wsu-gray: #5e6a71;
   --wsu-black: #2a3033;
   --wsu-light-gray: #f2f4f5;
-  
+
   /* Safe Area Variables for Mobile */
   --sat: env(safe-area-inset-top);
   --sab: env(safe-area-inset-bottom);
   --sal: env(safe-area-inset-left);
   --sar: env(safe-area-inset-right);
+
+  /* Light Mode Colors */
+  --bg-primary: #f9fafb;
+  --bg-secondary: #ffffff;
+  --bg-tertiary: #f3f4f6;
+  --text-primary: #111827;
+  --text-secondary: #6b7280;
+  --text-tertiary: #9ca3af;
+  --border-primary: #e5e7eb;
+  --border-secondary: #d1d5db;
 
   /* Glassmorphism Variables */
   --glass-bg: rgba(255, 255, 255, 0.7);
@@ -21,14 +31,34 @@
   --glass-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.07);
 }
 
+:root.dark {
+  /* Dark Mode Colors - Deep Black */
+  --bg-primary: #000000;
+  --bg-secondary: #0d0d0d;
+  --bg-tertiary: #1a1a1a;
+  --text-primary: #ffffff;
+  --text-secondary: #e5e5e5;
+  --text-tertiary: #b3b3b3;
+  --border-primary: #262626;
+  --border-secondary: #333333;
+
+  /* Dark Glassmorphism */
+  --glass-bg: rgba(13, 13, 13, 0.7);
+  --glass-border: rgba(51, 51, 51, 0.5);
+  --glass-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.5);
+}
+
 @layer base {
   body {
-    @apply bg-gray-50 text-gray-900 antialiased;
+    background-color: var(--bg-primary);
+    color: var(--text-primary);
+    @apply antialiased;
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
     padding-top: var(--sat);
     padding-bottom: var(--sab);
     padding-left: var(--sal);
     padding-right: var(--sar);
+    transition: background-color 0.3s ease, color 0.3s ease;
   }
 
   /* Custom Scrollbar */
@@ -41,6 +71,11 @@
   }
   ::-webkit-scrollbar-thumb {
     @apply bg-gray-300 rounded-full hover:bg-gray-400 transition-colors;
+  }
+
+  /* Dark mode scrollbar */
+  :root.dark ::-webkit-scrollbar-thumb {
+    @apply bg-gray-600 rounded-full hover:bg-gray-500;
   }
 }
 

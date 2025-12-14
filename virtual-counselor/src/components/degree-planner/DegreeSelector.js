@@ -24,16 +24,16 @@ function DegreeSelector({
   handleRemoveProgram
 }) {
   return (
-    <div className="bg-white rounded-lg shadow p-6">
-      <h3 className="text-lg font-semibold mb-4">Select Degree Program</h3>
+    <div className="bg-white dark:bg-gray-800 rounded-lg shadow p-6">
+      <h3 className="text-lg font-semibold mb-4 dark:text-white">Select Degree Program</h3>
 
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4 mb-4">
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Catalog Year</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Catalog Year</label>
           <select
             value={selectedYear}
             onChange={(e) => setSelectedYear(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
           >
             {catalogYears.map(year => (
               <option key={year} value={year}>{year}</option>
@@ -41,11 +41,11 @@ function DegreeSelector({
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Filter by Type</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Filter by Type</label>
           <select
             value={degreeFilterType}
             onChange={(e) => setDegreeFilterType(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
           >
             <option value="all">All Programs</option>
             <option value="major">Majors Only</option>
@@ -54,11 +54,11 @@ function DegreeSelector({
           </select>
         </div>
         <div>
-          <label className="block text-sm font-medium text-gray-700 mb-1">Sort by</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Sort by</label>
           <select
             value={degreeSortBy}
             onChange={(e) => setDegreeSortBy(e.target.value)}
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
           >
             <option value="name-asc">Name (A-Z)</option>
             <option value="name-desc">Name (Z-A)</option>
@@ -66,7 +66,7 @@ function DegreeSelector({
           </select>
         </div>
         <div className="relative">
-          <label className="block text-sm font-medium text-gray-700 mb-1">Search Programs</label>
+          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Search Programs</label>
           <input
             ref={degreeInputRef}
             type="text"
@@ -78,12 +78,12 @@ function DegreeSelector({
             onFocus={() => setShowDegreeSuggestions(true)}
             onBlur={() => setTimeout(() => setShowDegreeSuggestions(false), 200)}
             placeholder="Type to search..."
-            className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+            className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
           />
 
           {/* Suggestions Dropdown */}
           {showDegreeSuggestions && degreeSearch.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-60 overflow-y-auto">
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-60 overflow-y-auto">
               {degrees
                 .filter(d => degreeFilterType === 'all' || d.degree_type === degreeFilterType)
                 .filter(d => d.name.toLowerCase().includes(degreeSearch.toLowerCase()))
@@ -111,13 +111,13 @@ function DegreeSelector({
                       setDegreeSearch('');
                       setShowDegreeSuggestions(false);
                     }}
-                    className="w-full px-3 py-2 text-left hover:bg-gray-100 flex items-center justify-between"
+                    className="w-full px-3 py-2 text-left hover:bg-gray-100 dark:hover:bg-gray-700 dark:text-white flex items-center justify-between"
                   >
-                    <span className="text-sm">{d.name}</span>
+                    <span className="text-sm dark:text-gray-200">{d.name}</span>
                     <span className={`text-xs px-2 py-1 rounded-full ${
-                      d.degree_type === 'major' ? 'bg-blue-100 text-blue-800' :
-                      d.degree_type === 'minor' ? 'bg-green-100 text-green-800' :
-                      'bg-purple-100 text-purple-800'
+                      d.degree_type === 'major' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' :
+                      d.degree_type === 'minor' ? 'bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-200' :
+                      'bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-200'
                     }`}>
                       {d.degree_type === 'major' ? 'Major' :
                        d.degree_type === 'minor' ? 'Minor' : 'Certificate'}
@@ -127,7 +127,7 @@ function DegreeSelector({
               {degrees
                 .filter(d => degreeFilterType === 'all' || d.degree_type === degreeFilterType)
                 .filter(d => d.name.toLowerCase().includes(degreeSearch.toLowerCase())).length === 0 && (
-                <div className="px-3 py-2 text-sm text-gray-500">
+                <div className="px-3 py-2 text-sm text-gray-500 dark:text-gray-400">
                   No {degreeFilterType === 'all' ? 'programs' : degreeFilterType + 's'} found matching "{degreeSearch}"
                 </div>
               )}
@@ -139,7 +139,7 @@ function DegreeSelector({
       {/* Selected Programs */}
       {[...selectedPrograms.majors, ...selectedPrograms.minors, ...selectedPrograms.certificates].length > 0 && (
         <div className="mt-4 space-y-3">
-          <h4 className="text-sm font-medium text-gray-700 mb-2">Selected Programs:</h4>
+          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Selected Programs:</h4>
           <div className="space-y-2">
             {/* Majors */}
             {selectedPrograms.majors.map((prog, idx) => (

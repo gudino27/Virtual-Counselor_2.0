@@ -2,7 +2,7 @@ import React, { useState } from 'react';
 import TermCard from './TermCard';
 
 // Year Section Component
-function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete, hideHeader, openCatalogForCourse, openClassCalc, activeTermTab, setActiveTermTab, allCompletedCourses, duplicateCourses }) {
+function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete, hideHeader, openCatalogForCourse, openClassCalc, onMoveClick, activeTermTab, setActiveTermTab, allCompletedCourses, duplicateCourses }) {
   const [expanded, setExpanded] = useState(true);
 
   const yearData = degreePlan[year.id] || { fall: { courses: [] }, spring: { courses: [] }, summer: { courses: [] } };
@@ -70,6 +70,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
               setDegreePlan={setDegreePlan}
               openCatalogForCourse={openCatalogForCourse}
               openClassCalc={openClassCalc}
+              onMoveClick={onMoveClick}
               allCompletedCourses={allCompletedCourses}
               duplicateCourses={duplicateCourses}
             />
@@ -82,6 +83,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
               setDegreePlan={setDegreePlan}
               openCatalogForCourse={openCatalogForCourse}
               openClassCalc={openClassCalc}
+              onMoveClick={onMoveClick}
               allCompletedCourses={allCompletedCourses}
               duplicateCourses={duplicateCourses}
             />
@@ -94,6 +96,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
               setDegreePlan={setDegreePlan}
               openCatalogForCourse={openCatalogForCourse}
               openClassCalc={openClassCalc}
+              onMoveClick={onMoveClick}
               allCompletedCourses={allCompletedCourses}
               duplicateCourses={duplicateCourses}
             />
@@ -111,6 +114,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
                 setDegreePlan={setDegreePlan}
                 openCatalogForCourse={openCatalogForCourse}
                 openClassCalc={openClassCalc}
+                onMoveClick={onMoveClick}
                 allCompletedCourses={allCompletedCourses}
                 duplicateCourses={duplicateCourses}
               />
@@ -125,6 +129,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
                 setDegreePlan={setDegreePlan}
                 openCatalogForCourse={openCatalogForCourse}
                 openClassCalc={openClassCalc}
+                onMoveClick={onMoveClick}
                 allCompletedCourses={allCompletedCourses}
                 duplicateCourses={duplicateCourses}
               />
@@ -139,6 +144,7 @@ function YearSection({ year, degreePlan, setDegreePlan, onDeleteYear, canDelete,
                 setDegreePlan={setDegreePlan}
                 openCatalogForCourse={openCatalogForCourse}
                 openClassCalc={openClassCalc}
+                onMoveClick={onMoveClick}
                 allCompletedCourses={allCompletedCourses}
                 duplicateCourses={duplicateCourses}
               />

@@ -12,16 +12,16 @@ function GradeScaleModal({ show, onClose }) {
       aria-label="WSU Grade Scale"
       onClick={onClose}
     >
-      <div className="absolute inset-0 bg-black bg-opacity-40" />
+      <div className="absolute inset-0 bg-black bg-opacity-40 dark:bg-opacity-70" />
       <div
-        className="relative z-10 w-full max-w-md mx-4 bg-white rounded-lg shadow-lg overflow-hidden"
+        className="relative z-10 w-full max-w-md mx-4 bg-white dark:bg-gray-800 rounded-lg shadow-lg overflow-hidden"
         onClick={(e) => e.stopPropagation()}
       >
-        <div className="flex items-center justify-between px-4 py-3 border-b">
-          <h3 className="font-semibold text-lg">WSU Grade Scale</h3>
+        <div className="flex items-center justify-between px-4 py-3 border-b dark:border-gray-700">
+          <h3 className="font-semibold text-lg dark:text-white">WSU Grade Scale</h3>
           <button
             onClick={onClose}
-            className="text-gray-600 hover:text-gray-800 rounded p-1"
+            className="text-gray-600 dark:text-gray-400 hover:text-gray-800 dark:hover:text-gray-200 rounded p-1"
             aria-label="Close grade scale"
           >
             ✕
@@ -29,16 +29,16 @@ function GradeScaleModal({ show, onClose }) {
         </div>
 
         <div className="p-4">
-          <p className="text-sm text-gray-700 mb-3">This shows the standard grade-to-point mapping used for GPA calculations.</p>
+          <p className="text-sm text-gray-700 dark:text-gray-300 mb-3">This shows the standard grade-to-point mapping used for GPA calculations.</p>
           <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-sm">
             {Object.entries(GRADE_POINTS).map(([grade, points]) => (
-              <div key={grade} className="flex items-center justify-between bg-gray-50 px-3 py-2 rounded">
-                <div className="font-medium">{grade}</div>
-                <div className="text-gray-600">{points.toFixed(1)}</div>
+              <div key={grade} className="flex items-center justify-between bg-gray-50 dark:bg-gray-700 px-3 py-2 rounded">
+                <div className="font-medium dark:text-white">{grade}</div>
+                <div className="text-gray-600 dark:text-gray-400">{points.toFixed(1)}</div>
               </div>
             ))}
           </div>
-          <div className="mt-3 text-xs text-gray-500">Tip: press <span className="font-medium">Esc</span> or tap outside to close.</div>
+          <div className="mt-3 text-xs text-gray-500 dark:text-gray-400">Tip: press <span className="font-medium">Esc</span> or tap outside to close.</div>
         </div>
       </div>
     </div>

@@ -128,6 +128,25 @@ function CoursePlanner() {
     }
   };
 
+  // Extract unique years from terms data
+  const availableYears = useMemo(() => {
+    if (!terms || terms.length === 0) {
+      // Fallback to current and next year if no terms loaded yet
+      const currentYear = new Date().getFullYear();
+      return [currentYear + 1, currentYear];
+    }
+
+    const yearSet = new Set();
+    terms.forEach(term => {
+      if (term.year) {
+        yearSet.add(parseInt(term.year));
+      }
+    });
+
+    // Sort years in descending order (newest first)
+    return Array.from(yearSet).sort((a, b) => b - a);
+  }, [terms]);
+
   const searchCourses = async () => {
     setLoading(true);
     try {
@@ -238,18 +257,18 @@ function CoursePlanner() {
       <div className="grid grid-cols-12 gap-4 flex-1 min-h-0">
         {/* Left Panel - Course Search */}
         <div className="col-span-12 lg:col-span-4 flex flex-col gap-4 overflow-hidden">
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4">
-            <h3 className="font-bold text-wsu-crimson text-lg mb-4">Course Search</h3>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4">
+            <h3 className="font-bold text-wsu-crimson dark:text-red-400 text-lg mb-4">Course Search</h3>
 
             {/* Filters */}
             <div className="space-y-3">
               <div className="grid grid-cols-3 gap-2">
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Term</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Term</label>
                   <select
                     value={filters.term}
                     onChange={(e) => setFilters({ ...filters, term: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     <option value="Fall">Fall</option>
                     <option value="Spring">Spring</option>
@@ -258,11 +277,11 @@ function CoursePlanner() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Year</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Year</label>
                   <select
                     value={filters.year}
                     onChange={(e) => setFilters({ ...filters, year: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     <option value="2026">2026</option>
                     <option value="2025">2025</option>
@@ -270,11 +289,11 @@ function CoursePlanner() {
                 </div>
 
                 <div>
-                  <label className="block text-xs font-medium text-gray-700 mb-1">Campus</label>
+                  <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Campus</label>
                   <select
                     value={filters.campus}
                     onChange={(e) => setFilters({ ...filters, campus: e.target.value })}
-                    className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+                    className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
                   >
                     <option value="">All Campuses</option>
                     <option value="Pullman">Pullman</option>
@@ -288,11 +307,11 @@ function CoursePlanner() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Subject</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Subject</label>
                 <select
                   value={filters.prefix}
                   onChange={(e) => setFilters({ ...filters, prefix: e.target.value })}
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
                 >
                   <option value="">All Subjects</option>
                   {prefixes.map(p => {
@@ -313,41 +332,41 @@ function CoursePlanner() {
               </div>
 
               <div>
-                <label className="block text-xs font-medium text-gray-700 mb-1">Search</label>
+                <label className="block text-xs font-medium text-gray-700 dark:text-gray-300 mb-1">Search</label>
                 <input
                   type="text"
                   value={filters.search}
                   onChange={(e) => setFilters({ ...filters, search: e.target.value })}
                   placeholder="Course name, number, or instructor..."
-                  className="w-full px-3 py-2 text-sm border border-gray-300 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+                  className="w-full px-3 py-2 text-sm border border-gray-300 dark:border-gray-600 rounded-lg focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
                 />
               </div>
             </div>
           </div>
 
           {/* Search Results */}
-          <div className="bg-white rounded-xl shadow-sm border border-gray-100 p-4 flex-1 overflow-hidden flex flex-col">
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 flex-1 overflow-hidden flex flex-col">
             <div className="flex justify-between items-center mb-3">
               <div className="flex items-center gap-3">
-                <h4 className="font-semibold text-gray-700">
+                <h4 className="font-semibold text-gray-700 dark:text-gray-300">
                   {loading ? 'Searching...' : `${totalResults} Courses`}
                 </h4>
                 {!loading && totalResults > 0 && (
-                  <div className="text-sm text-gray-500">Showing {(page - 1) * pageSize + 1}-{Math.min((page) * pageSize, totalResults)} of {totalResults}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">Showing {(page - 1) * pageSize + 1}-{Math.min((page) * pageSize, totalResults)} of {totalResults}</div>
                 )}
               </div>
               <div className="flex items-center gap-2">
                 <button
                   onClick={() => setPage(p => Math.max(1, p - 1))}
                   disabled={page <= 1}
-                  className={`px-3 py-1 rounded border text-sm ${page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+                  className={`px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white ${page <= 1 ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                 >
                   Prev
                 </button>
                 <button
                   onClick={() => setPage(p => (p * pageSize < totalResults ? p + 1 : p))}
                   disabled={page * pageSize >= totalResults}
-                  className={`px-3 py-1 rounded border text-sm ${page * pageSize >= totalResults ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100'}`}
+                  className={`px-3 py-1 rounded border border-gray-300 dark:border-gray-600 text-sm dark:text-white ${page * pageSize >= totalResults ? 'opacity-50 cursor-not-allowed' : 'hover:bg-gray-100 dark:hover:bg-gray-700'}`}
                 >
                   Next
                 </button>
@@ -356,7 +375,7 @@ function CoursePlanner() {
 
             <div className="flex-1 overflow-y-auto space-y-2">
               {Object.keys(groupedCourses).length === 0 ? (
-                <div className="text-center text-gray-400 py-8">
+                <div className="text-center text-gray-400 dark:text-gray-500 py-8">
                   {loading ? (
                     <div className="flex items-center justify-center gap-2">
                       <div className="w-4 h-4 border-2 border-wsu-crimson border-t-transparent rounded-full animate-spin"></div>
@@ -506,26 +525,26 @@ function CourseCard({ courseKey, course, sections, isExpanded, onToggle, onAdd, 
   const isAdded = (section) => selectedCourses.some(c => c.uniqueId === section.uniqueId);
 
   return (
-    <div className="bg-gray-50 rounded-xl border border-gray-200 overflow-hidden">
+    <div className="bg-gray-50 dark:bg-gray-700 rounded-xl border border-gray-200 dark:border-gray-600 overflow-hidden">
       <button
         onClick={onToggle}
-        className="w-full px-3 py-3 text-left hover:bg-gray-100 transition flex items-center justify-between"
+        className="w-full px-3 py-3 text-left hover:bg-gray-100 dark:hover:bg-gray-600 transition flex items-center justify-between"
       >
         <div className="flex-1">
-          <div className="font-semibold text-gray-900">
+          <div className="font-semibold text-gray-900 dark:text-white">
             {course.prefix || course.coursePrefix} {course.courseNumber}
-            <span className="ml-2 text-xs font-normal text-gray-500">
+            <span className="ml-2 text-xs font-normal text-gray-500 dark:text-gray-400">
               {course.credits} credit{course.credits !== 1 ? 's' : ''}
             </span>
           </div>
-          <div className="text-sm text-gray-600 line-clamp-1">{stripHtml(course.title)}</div>
+          <div className="text-sm text-gray-600 dark:text-gray-300 line-clamp-1">{stripHtml(course.title)}</div>
         </div>
         <div className="flex items-center gap-2">
-          <span className="text-xs text-gray-500 bg-gray-200 px-2 py-1 rounded">
+          <span className="text-xs text-gray-500 dark:text-gray-300 bg-gray-200 dark:bg-gray-600 px-2 py-1 rounded">
             {sections.length} section{sections.length > 1 ? 's' : ''}
           </span>
           <svg
-            className={`w-5 h-5 text-gray-400 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
+            className={`w-5 h-5 text-gray-400 dark:text-gray-300 transition-transform ${isExpanded ? 'rotate-180' : ''}`}
             fill="none"
             stroke="currentColor"
             viewBox="0 0 24 24"
@@ -536,51 +555,51 @@ function CourseCard({ courseKey, course, sections, isExpanded, onToggle, onAdd, 
       </button>
 
       {isExpanded && (
-        <div className="border-t border-gray-200 p-3 space-y-2 bg-white">
+        <div className="border-t border-gray-200 dark:border-gray-600 p-3 space-y-2 bg-white dark:bg-gray-800">
           {sections.map(section => (
             <div
               key={section.uniqueId}
               className={`border rounded-lg p-3 transition ${
-                isAdded(section) ? 'border-green-300 bg-green-50' : 'border-gray-200 hover:border-gray-300'
+                isAdded(section) ? 'border-green-300 dark:border-green-700 bg-green-50 dark:bg-green-900/20' : 'border-gray-200 dark:border-gray-600 hover:border-gray-300 dark:hover:border-gray-500'
               }`}
             >
               <div className="flex justify-between items-start">
                 <div className="flex-1">
                   <div className="flex items-center gap-2 mb-1">
-                    <span className="font-medium text-sm">Section {section.sectionNumber}</span>
+                    <span className="font-medium text-sm dark:text-white">Section {section.sectionNumber}</span>
                     {/* Section type badge: prefer explicit isLab flag, fall back to sectionTitle containing "lab" */}
                     {(() => {
                       const title = (stripHtml(section.sectionTitle || '')).toLowerCase();
                       const isLab = section.isLab || title.includes('lab');
                       const tag = isLab ? 'Lab' : 'Lecture';
                       return (
-                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${isLab ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'}`}>
+                        <span className={`text-xs font-medium px-2 py-0.5 rounded ${isLab ? 'bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-200' : 'bg-gray-100 text-gray-800 dark:bg-gray-600 dark:text-gray-200'}`}>
                           {tag}
                         </span>
                       );
                     })()}
                     {section.seatsAvailable > 0 ? (
-                      <span className="text-xs text-green-600 bg-green-100 px-2 py-0.5 rounded">
+                      <span className="text-xs text-green-600 dark:text-green-400 bg-green-100 dark:bg-green-900/30 px-2 py-0.5 rounded">
                         {section.seatsAvailable} seats
                       </span>
                     ) : (
-                      <span className="text-xs text-red-600 bg-red-100 px-2 py-0.5 rounded">
+                      <span className="text-xs text-red-600 dark:text-red-400 bg-red-100 dark:bg-red-900/30 px-2 py-0.5 rounded">
                         Full
                       </span>
                     )}
                   </div>
-                  <div className="text-sm text-gray-600">{parseInstructors(section)}</div>
-                  <div className="text-sm text-gray-500">
+                  <div className="text-sm text-gray-600 dark:text-gray-300">{parseInstructors(section)}</div>
+                  <div className="text-sm text-gray-500 dark:text-gray-400">
                     {formatDayTime(section.dayTime)}
                   </div>
                   {section.location && section.location !== 'ARR ARR' && (
-                    <div className="text-xs text-gray-400 mt-1">{section.location}</div>
+                    <div className="text-xs text-gray-400 dark:text-gray-500 mt-1">{section.location}</div>
                   )}
                 </div>
                 <div className="flex gap-2">
                   <button
                     onClick={() => onShowDetails(section)}
-                    className="p-2 text-gray-500 hover:text-wsu-crimson hover:bg-gray-100 rounded-lg transition"
+                    className="p-2 text-gray-500 dark:text-gray-400 hover:text-wsu-crimson dark:hover:text-red-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg transition"
                     title="View details"
                   >
                     <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">

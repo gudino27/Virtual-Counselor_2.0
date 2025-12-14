@@ -2,7 +2,7 @@ import React from 'react';
 import CourseRow, { GRADE_POINTS } from './CourseRow';
 
 // Term Card Component
-function TermCard({ title, term, yearId, courses, degreePlan, setDegreePlan, openCatalogForCourse, openClassCalc, allCompletedCourses, duplicateCourses }) {
+function TermCard({ title, term, yearId, courses, degreePlan, setDegreePlan, openCatalogForCourse, openClassCalc, onMoveClick, allCompletedCourses, duplicateCourses }) {
   const totalCredits = courses.reduce((sum, c) => sum + (c.credits || 0), 0);
 
   const calculateTermGPA = () => {
@@ -89,6 +89,7 @@ function TermCard({ title, term, yearId, courses, degreePlan, setDegreePlan, ope
             course={course}
             onUpdate={updateCourse}
             onRemove={removeCourse}
+            onMoveClick={onMoveClick ? () => onMoveClick(course, yearId, term) : null}
             yearId={yearId}
             term={term}
             openCatalog={openCatalogForCourse}

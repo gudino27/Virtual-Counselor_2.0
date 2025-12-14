@@ -6,6 +6,9 @@ const STORAGE_KEYS = {
   USER_COURSES: 'wsu_vc_user_courses',
   PREFERENCES: 'wsu_vc_preferences',
   UCORE_CACHE: 'wsu_vc_ucore_cache',
+  GRADE_CALCULATOR: 'wsu_vc_grade_calculator',
+  RECENT_COURSES: 'wsu_vc_recent_courses',
+  THEME: 'wsu_vc_theme',
 };
 
 export function saveDegreePlan(plan) {
@@ -148,6 +151,139 @@ export function clearUcoreCache() {
   }
 }
 
+// Grade Calculator storage - keyed by course name
+export function saveGradeCalculatorData(courseName, data) {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.GRADE_CALCULATOR);
+    const allData = stored ? JSON.parse(stored) : {};
+
+    // Use a sanitized key (course name or 'default' for no course)
+    const key = courseName ? courseName.trim().toLowerCase().replace(/\s+/g, '_') : 'default';
+    allData[key] = {
+      ...data,
+      updatedAt: Date.now(),
+    };
+
+    localStorage.setItem(STORAGE_KEYS.GRADE_CALCULATOR, JSON.stringify(allData));
+    return true;
+  } catch (error) {
+    console.error('Error saving grade calculator data:', error);
+    return false;
+  }
+}
+
+export function loadGradeCalculatorData(courseName) {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.GRADE_CALCULATOR);
+    if (!stored) return null;
+
+    const allData = JSON.parse(stored);
+    const key = courseName ? courseName.trim().toLowerCase().replace(/\s+/g, '_') : 'default';
+
+    return allData[key] || null;
+  } catch (error) {
+    console.error('Error loading grade calculator data:', error);
+    return null;
+  }
+}
+
+export function clearGradeCalculatorData(courseName) {
+  try {
+    if (!courseName) {
+      // Clear all calculator data
+      localStorage.removeItem(STORAGE_KEYS.GRADE_CALCULATOR);
+    } else {
+      // Clear specific course data
+      const stored = localStorage.getItem(STORAGE_KEYS.GRADE_CALCULATOR);
+      if (stored) {
+        const allData = JSON.parse(stored);
+        const key = courseName.trim().toLowerCase().replace(/\s+/g, '_');
+        delete allData[key];
+        localStorage.setItem(STORAGE_KEYS.GRADE_CALCULATOR, JSON.stringify(allData));
+      }
+    }
+    return true;
+  } catch (error) {
+    console.error('Error clearing grade calculator data:', error);
+    return false;
+  }
+}
+
+// Recent courses storage for search history
+export function saveRecentCourse(course) {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.RECENT_COURSES);
+    let recentCourses = stored ? JSON.parse(stored) : [];
+
+    // Remove if already exists (to move to front)
+    recentCourses = recentCourses.filter(c =>
+      c.prefix !== course.prefix || c.number !== course.number
+    );
+
+    // Add to front
+    recentCourses.unshift({
+      ...course,
+      addedAt: Date.now(),
+    });
+
+    // Keep only last 15 courses
+    recentCourses = recentCourses.slice(0, 15);
+
+    localStorage.setItem(STORAGE_KEYS.RECENT_COURSES, JSON.stringify(recentCourses));
+    return true;
+  } catch (error) {
+    console.error('Error saving recent course:', error);
+    return false;
+  }
+}
+
+export function loadRecentCourses() {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEYS.RECENT_COURSES);
+    return stored ? JSON.parse(stored) : [];
+  } catch (error) {
+    console.error('Error loading recent courses:', error);
+    return [];
+  }
+}
+
+export function clearRecentCourses() {
+  try {
+    localStorage.removeItem(STORAGE_KEYS.RECENT_COURSES);
+    return true;
+  } catch (error) {
+    console.error('Error clearing recent courses:', error);
+    return false;
+  }
+}
+
+// Theme storage
+export function saveTheme(theme) {
+  try {
+    localStorage.setItem(STORAGE_KEYS.THEME, theme);
+    return true;
+  } catch (error) {
+    console.error('Error saving theme:', error);
+    return false;
+  }
+}
+
+export function loadTheme() {
+  try {
+    const theme = localStorage.getItem(STORAGE_KEYS.THEME);
+    if (theme) return theme;
+
+    // Check system preference
+    if (window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches) {
+      return 'dark';
+    }
+    return 'light';
+  } catch (error) {
+    console.error('Error loading theme:', error);
+    return 'light';
+  }
+}
+
 // Helper functions for degree planner
 export function createEmptyCourses(count = 1) {
   const courses = [];
@@ -213,6 +349,14 @@ export default {
   saveUcoreCache,
   loadUcoreCache,
   clearUcoreCache,
+  saveGradeCalculatorData,
+  loadGradeCalculatorData,
+  clearGradeCalculatorData,
+  saveRecentCourse,
+  loadRecentCourses,
+  clearRecentCourses,
+  saveTheme,
+  loadTheme,
   createEmptyCourses,
   createEmptyDegreePlan,
 };

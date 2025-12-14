@@ -134,15 +134,15 @@ function CourseSearch() {
 
   return (
     <div className="max-w-7xl mx-auto">
-      <div className="bg-white rounded-lg shadow-md p-6 mb-6">
-        <h2 className="text-2xl font-bold text-crimson mb-4">Course Search</h2>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md p-6 mb-6">
+        <h2 className="text-2xl font-bold text-crimson dark:text-red-400 mb-4">Course Search</h2>
         
         {/* Filters */}
         <div className="grid grid-cols-1 md:grid-cols-3 lg:grid-cols-6 gap-4 mb-4">
           <select
             value={filters.year}
             onChange={(e) => updateFilter('year', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white"
           >
             <option value="">Year</option>
             {[2025, 2024, 2023].map(y => (
@@ -153,7 +153,7 @@ function CourseSearch() {
           <select
             value={filters.term}
             onChange={(e) => updateFilter('term', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white"
           >
             <option value="">Term</option>
             <option value="Spring">Spring</option>
@@ -164,7 +164,7 @@ function CourseSearch() {
           <select
             value={filters.campus}
             onChange={(e) => updateFilter('campus', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white"
           >
             <option value="">Campus</option>
             <option value="Pullman">Pullman</option>
@@ -178,7 +178,7 @@ function CourseSearch() {
           <select
             value={filters.prefix}
             onChange={(e) => updateFilter('prefix', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white"
           >
             <option value="">Prefix</option>
             {prefixes.slice(0, 50).map(p => (
@@ -191,7 +191,7 @@ function CourseSearch() {
             placeholder="Min Seats"
             value={filters.minSeats}
             onChange={(e) => updateFilter('minSeats', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
           />
 
           <input
@@ -199,7 +199,7 @@ function CourseSearch() {
             placeholder="Search..."
             value={filters.search}
             onChange={(e) => updateFilter('search', e.target.value)}
-            className="px-3 py-2 border rounded focus:outline-none focus:ring-2 focus:ring-crimson"
+            className="px-3 py-2 border border-gray-300 dark:border-gray-600 rounded focus:outline-none focus:ring-2 focus:ring-crimson dark:bg-gray-700 dark:text-white dark:placeholder-gray-400"
           />
         </div>
 
@@ -213,20 +213,20 @@ function CourseSearch() {
       </div>
 
       {/* Results */}
-      <div className="bg-white rounded-lg shadow-md overflow-hidden">
-        <div className="p-4 bg-gray-50 border-b flex justify-between items-center">
-          <h3 className="font-semibold">{totalCourses} courses found</h3>
+      <div className="bg-white dark:bg-gray-800 rounded-lg shadow-md overflow-hidden">
+        <div className="p-4 bg-gray-50 dark:bg-gray-700 border-b dark:border-gray-600 flex justify-between items-center">
+          <h3 className="font-semibold dark:text-white">{totalCourses} courses found</h3>
           <div className="flex items-center gap-2">
-            <div className="flex bg-gray-100 rounded-lg p-1">
+            <div className="flex bg-gray-100 dark:bg-gray-600 rounded-lg p-1">
               <button
                 onClick={() => setViewMode('list')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white text-wsu-crimson shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'list' ? 'bg-white dark:bg-gray-800 text-wsu-crimson dark:text-red-400 shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'}`}
               >
                 List
               </button>
               <button
                 onClick={() => setViewMode('calendar')}
-                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'calendar' ? 'bg-white text-wsu-crimson shadow-sm' : 'text-gray-600 hover:text-gray-900'}`}
+                className={`px-3 py-1 rounded-md text-sm font-medium transition-colors ${viewMode === 'calendar' ? 'bg-white dark:bg-gray-800 text-wsu-crimson dark:text-red-400 shadow-sm' : 'text-gray-600 dark:text-gray-300 hover:text-gray-900 dark:hover:text-white'}`}
               >
                 Calendar
               </button>
@@ -236,17 +236,17 @@ function CourseSearch() {
             <button
               onClick={() => setPage(Math.max(1, page - 1))}
               disabled={page === 1}
-              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               Previous
             </button>
-            <span className="px-3 py-1 text-sm">
+            <span className="px-3 py-1 text-sm dark:text-gray-300">
               Page {page} of {Math.ceil(totalCourses / coursesPerPage)}
             </span>
             <button
               onClick={() => setPage(page + 1)}
               disabled={page >= Math.ceil(totalCourses / coursesPerPage)}
-              className="px-3 py-1 border rounded hover:bg-gray-100 disabled:opacity-50 disabled:cursor-not-allowed text-sm"
+              className="px-3 py-1 border border-gray-300 dark:border-gray-600 rounded hover:bg-gray-100 dark:hover:bg-gray-600 dark:text-white disabled:opacity-50 disabled:cursor-not-allowed text-sm"
             >
               Next
             </button>
@@ -255,47 +255,49 @@ function CourseSearch() {
         
         {viewMode === 'calendar' ? (
           <div className="p-4 grid grid-cols-1 lg:grid-cols-4 gap-4 min-h-0">
-            <div className="lg:col-span-1 bg-white rounded-xl shadow-sm border border-gray-100 p-4 overflow-auto max-h-[600px]">
-              <h3 className="font-semibold text-gray-900 mb-3">Filters & Results</h3>
-              <div className="text-sm text-gray-600 mb-4">{courses.length} of results</div>
-              <div className="space-y-2 divide-y divide-gray-100">
+            <div className="lg:col-span-1 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 p-4 overflow-auto max-h-[600px]">
+              <h3 className="font-semibold text-gray-900 dark:text-white mb-3">Filters & Results</h3>
+              <div className="text-sm text-gray-600 dark:text-gray-400 mb-4">{courses.length} of results</div>
+              <div className="space-y-2 divide-y divide-gray-100 dark:divide-gray-700">
                 {courses.map(c => (
                   <div key={c.id || c.uniqueId} className="pt-2 first:pt-0">
-                    <div className="text-xs font-semibold text-gray-900 truncate">{c.prefix} {c.courseNumber}</div>
-                    <div className="text-xs text-gray-600 truncate">{c.title}</div>
-                    <div className="text-xs text-gray-500">{c.dayTime || 'TBA'}</div>
+                    <div className="text-xs font-semibold text-gray-900 dark:text-white truncate">{c.prefix} {c.courseNumber}</div>
+                    <div className="text-xs text-gray-600 dark:text-gray-400 truncate">{c.title}</div>
+                    <div className="text-xs text-gray-500 dark:text-gray-500">{c.dayTime || 'TBA'}</div>
                   </div>
                 ))}
               </div>
             </div>
 
-            <div className="lg:col-span-3 bg-white rounded-xl shadow-sm border border-gray-100 overflow-hidden">
+            <div className="lg:col-span-3 bg-white dark:bg-gray-800 rounded-xl shadow-sm border border-gray-100 dark:border-gray-700 overflow-hidden">
               <div className="h-full min-h-[400px]"><WeeklyCalendar courses={courses} /></div>
             </div>
           </div>
         ) : (
           <div className="overflow-x-auto">
             <table className="w-full">
-              <thead className="bg-gray-100">
+              <thead className="bg-gray-100 dark:bg-gray-700">
                 <tr>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Course</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Title</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">UCORE</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Credits</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Campus</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Term</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Seats</th>
-                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 uppercase">Actions</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Course</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Section</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Title</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">UCORE</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Credits</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Campus</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Term</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Seats</th>
+                  <th className="px-4 py-3 text-left text-xs font-semibold text-gray-700 dark:text-gray-300 uppercase">Actions</th>
                 </tr>
               </thead>
-              <tbody className="divide-y">
+              <tbody className="divide-y dark:divide-gray-700">
                 {courses.map((course, index) => {
                   const ucoreCategories = extractUCORECategories({ ucore: course.ucore });
-                  
+
                   return (
-                    <tr key={index} className="hover:bg-gray-50">
-                      <td className="px-4 py-3 font-mono text-sm font-medium">{course.prefix} {course.courseNumber}</td>
-                      <td className="px-4 py-3 text-sm">{course.title}</td>
+                    <tr key={index} className="hover:bg-gray-50 dark:hover:bg-gray-700">
+                      <td className="px-4 py-3 font-mono text-sm font-medium dark:text-gray-200">{course.prefix} {course.courseNumber}</td>
+                      <td className="px-4 py-3 text-sm text-center dark:text-gray-300">{course.sectionNumber || '-'}</td>
+                      <td className="px-4 py-3 text-sm dark:text-gray-300">{course.title}</td>
                       <td className="px-4 py-3">
                         <div className="flex flex-wrap gap-1">
                           {ucoreCategories.map(cat => (
@@ -308,9 +310,9 @@ function CourseSearch() {
                           ))}
                         </div>
                       </td>
-                      <td className="px-4 py-3 text-center text-sm">{course.credits}</td>
-                      <td className="px-4 py-3 text-sm">{course.campus}</td>
-                      <td className="px-4 py-3 text-sm">{course.term} {course.year}</td>
+                      <td className="px-4 py-3 text-center text-sm dark:text-gray-300">{course.credits}</td>
+                      <td className="px-4 py-3 text-sm dark:text-gray-300">{course.campus}</td>
+                      <td className="px-4 py-3 text-sm dark:text-gray-300">{course.term} {course.year}</td>
                       <td className="px-4 py-3">
                         <span className={`px-2 py-1 rounded text-xs font-semibold ${
                           course.seatsAvail > 10 ? 'bg-green-100 text-green-800' :

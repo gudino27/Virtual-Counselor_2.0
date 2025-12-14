@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { searchCatalogCourses } from '../../utils/api';
+import { loadRecentCourses, saveRecentCourse } from '../../utils/storage';
 
 // Grade points for GPA calculation
 export const GRADE_POINTS = {
@@ -70,13 +71,14 @@ function CourseNotes({ notes }) {
 }
 
 // Course Row Component with autocomplete
-function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, openClassCalc, completedCourses = [], duplicateCourses = new Set() }) {
+function CourseRow({ course, onUpdate, onRemove, onMoveClick, yearId, term, openCatalog, openClassCalc, completedCourses = [], duplicateCourses = new Set() }) {
   const textareaRef = useRef(null);
   const [courseSuggestions, setCourseSuggestions] = useState([]);
   const [showSuggestions, setShowSuggestions] = useState(false);
   const [searchLoading, setSearchLoading] = useState(false);
   const [selectedCourseInfo, setSelectedCourseInfo] = useState(null);
   const [expandedInfoIdx, setExpandedInfoIdx] = useState(null);
+  const [recentCourses, setRecentCourses] = useState([]);
 
   // Check if prerequisites are met for this course
   const checkPrereqsMet = () => {
@@ -113,6 +115,12 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
     return false;
   })();
 
+  // Load recent courses on mount
+  useEffect(() => {
+    const loadedRecent = loadRecentCourses();
+    setRecentCourses(loadedRecent);
+  }, []);
+
   useEffect(() => {
     if (textareaRef.current) {
       textareaRef.current.style.height = 'auto';
@@ -145,7 +153,13 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
 
   const handleCourseSearch = (value) => {
     onUpdate(course.id, 'name', value);
-    debouncedSearch(value);
+    // Show recent courses if input is short
+    if (value.length < 2) {
+      setCourseSuggestions([]);
+      setShowSuggestions(false);
+    } else {
+      debouncedSearch(value);
+    }
   };
 
   const selectCourse = (courseData) => {
@@ -161,6 +175,12 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
       const prereqs = courseData.prerequisite_codes || courseData.prerequisiteCodes;
       onUpdate(course.id, 'prerequisites', Array.isArray(prereqs) ? prereqs : []);
     }
+
+    // Save to recent courses
+    saveRecentCourse(courseData);
+    const updatedRecent = loadRecentCourses();
+    setRecentCourses(updatedRecent);
+
     setShowSuggestions(false);
     setSelectedCourseInfo(null);
   };
@@ -219,32 +239,160 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
             ref={textareaRef}
             value={course.name}
             onChange={(e) => handleCourseSearch(e.target.value)}
-            onFocus={() => course.name.length > 1 && setShowSuggestions(true)}
+            onFocus={() => {
+              // Show suggestions on focus if there's text or recent courses
+              if (course.name.length > 1 || recentCourses.length > 0) {
+                setShowSuggestions(true);
+              }
+            }}
             onBlur={() => setTimeout(() => setShowSuggestions(false), 200)}
             placeholder="Type course name (e.g., CPTS 121)"
             rows={1}
-            className="w-full px-2 py-1 text-sm border border-gray-300 rounded resize-none overflow-hidden focus:ring-2 focus:ring-wsu-crimson focus:border-transparent"
+            className="w-full px-2 py-1 text-sm border border-gray-300 dark:border-gray-600 rounded resize-none overflow-hidden focus:ring-2 focus:ring-wsu-crimson focus:border-transparent dark:bg-gray-700 dark:text-white"
           />
 
           {/* Loading indicator */}
           {searchLoading && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg px-3 py-2">
-              <div className="flex items-center gap-2 text-sm text-gray-500">
-                <div className="w-4 h-4 border-2 border-gray-200 border-t-wsu-crimson rounded-full animate-spin"></div>
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg px-3 py-2">
+              <div className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-400">
+                <div className="w-4 h-4 border-2 border-gray-200 dark:border-gray-700 border-t-wsu-crimson rounded-full animate-spin"></div>
                 Searching catalog...
               </div>
             </div>
           )}
 
           {/* Course Suggestions Dropdown */}
-          {showSuggestions && !searchLoading && courseSuggestions.length > 0 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg max-h-72 overflow-y-auto">
-              {courseSuggestions.map((c, idx) => (
+          {showSuggestions && !searchLoading && (courseSuggestions.length > 0 || (course.name.length < 2 && recentCourses.length > 0)) && (
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg max-h-72 overflow-y-auto">
+              {/* Recent Courses Section */}
+              {course.name.length < 2 && recentCourses.length > 0 && (
+                <div className="border-b border-gray-200 dark:border-gray-700">
+                  <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                    <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" />
+                    </svg>
+                    Recent Courses
+                  </div>
+                  {recentCourses.slice(0, 5).map((c, idx) => (
+                    <div
+                      key={`recent-${c.code || c.prefix}-${idx}`}
+                      className="border-b border-gray-100 dark:border-gray-700 last:border-b-0"
+                    >
+                      <div className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
+                        {/* Info icon button */}
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            setExpandedInfoIdx(expandedInfoIdx === `recent-${idx}` ? null : `recent-${idx}`);
+                          }}
+                          className="mt-0.5 p-1 text-gray-400 dark:text-gray-500 hover:text-wsu-crimson rounded hover:bg-gray-100 dark:hover:bg-gray-600"
+                          title="View course details"
+                        >
+                          <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
+                          </svg>
+                        </button>
+
+                        {/* Main course info - clickable to select */}
+                        <button
+                          type="button"
+                          onClick={() => selectCourse(c)}
+                          className="flex-1 text-left"
+                        >
+                          <div className="flex justify-between items-start">
+                            <div className="flex-1 min-w-0">
+                              <div className="font-medium text-sm text-gray-900 dark:text-white">
+                                {c.code || `${c.prefix} ${c.number}`}
+                              </div>
+                              <div className="text-xs text-gray-700 dark:text-gray-300 truncate">{c.title}</div>
+                              {c.description && expandedInfoIdx !== `recent-${idx}` && (
+                                <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                                  {truncateDesc(c.description, 100)}
+                                </div>
+                              )}
+                            </div>
+                            <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
+                              <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{c.credits || '—'} cr</span>
+                              {c.ucore && (
+                                <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
+                                  {c.ucore}
+                                </span>
+                              )}
+                            </div>
+                          </div>
+                        </button>
+                      </div>
+
+                      {/* Expanded course details */}
+                      {expandedInfoIdx === `recent-${idx}` && (
+                        <div className="px-3 pb-3 pt-1 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-600">
+                          <div className="text-xs space-y-2">
+                            {/* Full description */}
+                            {c.description && (
+                              <div>
+                                <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Description</div>
+                                <div className="text-gray-600 dark:text-gray-400 leading-relaxed">{c.description}</div>
+                              </div>
+                            )}
+
+                            {/* Prerequisites */}
+                            {c.prerequisite_raw && (
+                              <div>
+                                <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Prerequisites</div>
+                                <div className="text-gray-600 dark:text-gray-400">{c.prerequisite_raw}</div>
+                              </div>
+                            )}
+
+                            {/* UCORE designation */}
+                            {c.ucore && (
+                              <div>
+                                <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">UCORE</div>
+                                <span className="inline-block px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">
+                                  {c.ucore}
+                                </span>
+                              </div>
+                            )}
+
+                            {/* Credits */}
+                            <div>
+                              <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Credits</div>
+                              <div className="text-gray-600 dark:text-gray-400">{c.credits || c.credits_phrase || 'Variable'}</div>
+                            </div>
+
+                            {/* Select button */}
+                            <button
+                              type="button"
+                              onClick={() => selectCourse(c)}
+                              className="mt-2 w-full py-1.5 bg-wsu-crimson text-white text-xs font-medium rounded hover:bg-opacity-90"
+                            >
+                              Select this course
+                            </button>
+                          </div>
+                        </div>
+                      )}
+                    </div>
+                  ))}
+                </div>
+              )}
+
+              {/* Search Results Section */}
+              {courseSuggestions.length > 0 && (
+                <>
+                  {course.name.length < 2 && recentCourses.length > 0 && (
+                    <div className="px-3 py-1.5 bg-gray-50 dark:bg-gray-700/50 text-xs font-semibold text-gray-600 dark:text-gray-300 flex items-center gap-1.5">
+                      <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                      </svg>
+                      Search Results
+                    </div>
+                  )}
+                  {courseSuggestions.map((c, idx) => (
                 <div
                   key={c.code || `${c.prefix}-${c.number}-${idx}`}
-                  className="border-b border-gray-100 last:border-b-0"
+                  className="border-b border-gray-100 dark:border-gray-700 last:border-b-0"
                 >
-                  <div className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50">
+                  <div className="flex items-start gap-2 px-3 py-2 hover:bg-gray-50 dark:hover:bg-gray-700">
                     {/* Info icon button */}
                     <button
                       type="button"
@@ -252,7 +400,7 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
                         e.stopPropagation();
                         setExpandedInfoIdx(expandedInfoIdx === idx ? null : idx);
                       }}
-                      className="mt-0.5 p-1 text-gray-400 hover:text-wsu-crimson rounded hover:bg-gray-100"
+                      className="mt-0.5 p-1 text-gray-400 dark:text-gray-500 hover:text-wsu-crimson rounded hover:bg-gray-100 dark:hover:bg-gray-600"
                       title="View course details"
                     >
                       <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -268,20 +416,20 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
                     >
                       <div className="flex justify-between items-start">
                         <div className="flex-1 min-w-0">
-                          <div className="font-medium text-sm text-gray-900">
+                          <div className="font-medium text-sm text-gray-900 dark:text-white">
                             {c.code || `${c.prefix} ${c.number}`}
                           </div>
-                          <div className="text-xs text-gray-700 truncate">{c.title}</div>
+                          <div className="text-xs text-gray-700 dark:text-gray-300 truncate">{c.title}</div>
                           {c.description && expandedInfoIdx !== idx && (
-                            <div className="text-xs text-gray-500 mt-1 line-clamp-2">
+                            <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
                               {truncateDesc(c.description, 100)}
                             </div>
                           )}
                         </div>
                         <div className="flex flex-col items-end gap-1 ml-2 flex-shrink-0">
-                          <span className="text-xs font-medium text-gray-600">{c.credits || '—'} cr</span>
+                          <span className="text-xs font-medium text-gray-600 dark:text-gray-400">{c.credits || '—'} cr</span>
                           {c.ucore && (
-                            <span className="text-xs px-1.5 py-0.5 bg-green-100 text-green-800 rounded">
+                            <span className="text-xs px-1.5 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded">
                               {c.ucore}
                             </span>
                           )}
@@ -292,29 +440,29 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
 
                   {/* Expanded course details */}
                   {expandedInfoIdx === idx && (
-                    <div className="px-3 pb-3 pt-1 bg-gray-50 border-t border-gray-100">
+                    <div className="px-3 pb-3 pt-1 bg-gray-50 dark:bg-gray-700/50 border-t border-gray-100 dark:border-gray-600">
                       <div className="text-xs space-y-2">
                         {/* Full description */}
                         {c.description && (
                           <div>
-                            <div className="font-semibold text-gray-700 mb-1">Description</div>
-                            <div className="text-gray-600 leading-relaxed">{c.description}</div>
+                            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Description</div>
+                            <div className="text-gray-600 dark:text-gray-400 leading-relaxed">{c.description}</div>
                           </div>
                         )}
 
                         {/* Prerequisites */}
                         {c.prerequisite_raw && (
                           <div>
-                            <div className="font-semibold text-gray-700 mb-1">Prerequisites</div>
-                            <div className="text-gray-600">{c.prerequisite_raw}</div>
+                            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Prerequisites</div>
+                            <div className="text-gray-600 dark:text-gray-400">{c.prerequisite_raw}</div>
                           </div>
                         )}
 
                         {/* UCORE designation */}
                         {c.ucore && (
                           <div>
-                            <div className="font-semibold text-gray-700 mb-1">UCORE</div>
-                            <span className="inline-block px-2 py-0.5 bg-green-100 text-green-800 rounded text-xs">
+                            <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">UCORE</div>
+                            <span className="inline-block px-2 py-0.5 bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200 rounded text-xs">
                               {c.ucore}
                             </span>
                           </div>
@@ -322,8 +470,8 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
 
                         {/* Credits */}
                         <div>
-                          <div className="font-semibold text-gray-700 mb-1">Credits</div>
-                          <div className="text-gray-600">{c.credits || c.credits_phrase || 'Variable'}</div>
+                          <div className="font-semibold text-gray-700 dark:text-gray-300 mb-1">Credits</div>
+                          <div className="text-gray-600 dark:text-gray-400">{c.credits || c.credits_phrase || 'Variable'}</div>
                         </div>
 
                         {/* Select button */}
@@ -339,13 +487,15 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
                   )}
                 </div>
               ))}
+                </>
+              )}
             </div>
           )}
 
           {/* No results message */}
-          {showSuggestions && !searchLoading && courseSuggestions.length === 0 && course.name.length >= 2 && (
-            <div className="absolute z-10 w-full mt-1 bg-white border border-gray-300 rounded-lg shadow-lg px-3 py-2">
-              <div className="text-sm text-gray-500">No courses found matching "{course.name}"</div>
+          {showSuggestions && !searchLoading && courseSuggestions.length === 0 && course.name.length >= 2 && recentCourses.length === 0 && (
+            <div className="absolute z-10 w-full mt-1 bg-white dark:bg-gray-800 border border-gray-300 dark:border-gray-600 rounded-lg shadow-lg px-3 py-2">
+              <div className="text-sm text-gray-500 dark:text-gray-400">No courses found matching "{course.name}"</div>
             </div>
           )}
         </div>
@@ -355,35 +505,18 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
           {(!course.catalogCourseId && isPlaceholderRow()) && (
             <button
               onClick={() => openCatalog && openCatalog(course.id, yearId, term)}
-              className="text-xs px-2 py-1 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="text-xs px-2 py-1 bg-blue-600 dark:bg-blue-700 text-white rounded hover:bg-blue-700 dark:hover:bg-blue-600"
               title="Select course from catalog"
             >
               Select
             </button>
           )}
 
-          {/* Grade calculator trigger (visible on all sizes) */}
-          <button
-            type="button"
-            onClick={(e) => { e.preventDefault(); console.log('[CourseRow] calc button clicked', course.name); if (openClassCalc) openClassCalc(course.name || 'Course'); else console.warn('openClassCalc is not provided'); }}
-            aria-label="Open grade calculator"
-            title="Open grade calculator"
-            className="text-xs px-2 py-1 bg-gray-100 text-gray-700 rounded hover:bg-gray-200"
-          >
-            <svg aria-hidden="true" className="w-5 h-5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round">
-              <rect x="3" y="3" width="18" height="18" rx="2" />
-              <path d="M7 7h10" />
-              <path d="M7 11h4" />
-              <path d="M7 15h4" />
-            </svg>
-            <span className="sr-only">Open grade calculator</span>
-          </button>
-
           <button
             onClick={() => onRemove(course.id)}
             aria-label="Remove course"
             title="Remove course"
-            className="text-red-600 hover:text-red-800 text-sm px-2 focus:outline-none"
+            className="text-red-600 dark:text-red-400 hover:text-red-800 dark:hover:text-red-300 text-sm px-2 focus:outline-none"
           >
             ×
           </button>
@@ -424,10 +557,49 @@ function CourseRow({ course, onUpdate, onRemove, yearId, term, openCatalog, open
           ))}
         </select>
 
-        <div className="px-2 py-1 text-sm text-gray-600 text-right">
+        <div className="px-2 py-1 text-sm text-gray-600 dark:text-gray-400 text-right">
           {course.grade && course.credits ? ((GRADE_POINTS[course.grade] || 0) * course.credits).toFixed(1) : '—'}
         </div>
       </div>
+
+      {/* Action Buttons Row - Move and Grade Calculator */}
+      <div className="flex gap-2 mt-2">
+        {/* Move button - only show if course has content */}
+        {course.name && onMoveClick && (
+          <button
+            type="button"
+            onClick={() => onMoveClick(course)}
+            aria-label="Move course to different term"
+            title="Move this course to another year or term"
+            className="flex-1 flex items-center justify-center gap-1.5 text-xs px-3 py-2 bg-gradient-to-r from-blue-500 to-blue-600 text-white rounded-lg hover:from-blue-600 hover:to-blue-700 active:scale-95 shadow-sm hover:shadow transition-all"
+          >
+            <svg aria-hidden="true" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+              <path d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+            </svg>
+            <span className="font-medium">Move</span>
+          </button>
+        )}
+
+        {/* Grade calculator trigger */}
+        <button
+          type="button"
+          onClick={(e) => { e.preventDefault(); console.log('[CourseRow] calc button clicked', course.name); if (openClassCalc) openClassCalc(course.name || 'Course'); else console.warn('openClassCalc is not provided'); }}
+          aria-label="Open grade calculator to track assignments and calculate your grade"
+          title="Calculate your grade - track assignments, see what you need to get your target grade"
+          className="flex-1 flex items-center justify-center gap-1.5 text-xs px-3 py-2 bg-gradient-to-r from-purple-500 to-purple-600 text-white rounded-lg hover:from-purple-600 hover:to-purple-700 active:scale-95 shadow-sm hover:shadow transition-all"
+        >
+          <svg aria-hidden="true" className="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+            <rect x="4" y="2" width="16" height="20" rx="2" />
+            <line x1="8" y1="6" x2="16" y2="6" />
+            <line x1="8" y1="10" x2="12" y2="10" />
+            <line x1="8" y1="14" x2="12" y2="14" />
+            <line x1="8" y1="18" x2="10" y2="18" />
+            <circle cx="15" cy="15" r="2" />
+          </svg>
+          <span className="font-medium">Grade Calc</span>
+        </button>
+      </div>
+
       {/* Footnotes / Notes for the course - collapsible on mobile */}
       {((Array.isArray(course.footnotes) && course.footnotes.length > 0) || (course.footnotes && !Array.isArray(course.footnotes))) && (() => {
         return (
